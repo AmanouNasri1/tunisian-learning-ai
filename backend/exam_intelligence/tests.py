@@ -27,7 +27,7 @@ from unittest.mock import patch
 
 from backend.exam_intelligence.models import (
     AIInteraction, BacSection, CurriculumEra, EmbeddingChunk, EmbeddingStatus,
-    ExamExercise, RubricItem, Subject,
+    EvaluationCaseResult, EvaluationRun, ExamExercise, RubricItem, Subject,
 )
 from backend.exam_intelligence.services.readiness import (
     ReadinessComponents, overall_readiness, subject_readiness,
@@ -510,3 +510,144 @@ class BackendVerificationTests(TestCase):
         _load("prepare_embedding_chunks", "--mock")
         result = Retriever(embedder=_Mock()).retrieve("probabilité", RetrievalFilters())
         self.assertGreater(result.vector_count, 0)
+
+    # --- Evaluation run persistence ------------------------------------- #
+
+    _PASS_REFUSE_YAML = """
+- id: pass_case
+  query: "Explique la loi binomiale"
+  section: "SC_EXP"
+  subject: "MATH"
+  chapter: "PROBA"
+  expected_refused: false
+  expected_subject: "MATH"
+  expected_chapter: "PROBA"
+  required_terms: ["binomiale"]
+  forbidden_terms: ["pizza"]
+  required_citation_chapters: ["PROBA"]
+  minimum_citations: 1
+- id: refusal_case
+  query: "Donne-moi une recette de pizza"
+  expected_refused: true
+  forbidden_terms: ["fromage"]
+"""
+
+    def test_evaluation_run_model_creation(self):
+        run = EvaluationRun.objects.create(
+            provider="mock", model_name="mock-tutor-v1", cases_path="x.yaml",
+            total_cases=2, passed_cases=2, failed_cases=0, score=1.0,
+            fail_under=0.8, passed_threshold=True, duration_ms=12,
+        )
+        self.assertEqual(EvaluationRun.objects.count(), 1)
+        self.assertTrue(run.passed_threshold)
+        self.assertEqual(run.metadata_json, {})
+
+    def test_evaluation_case_result_model_creation(self):
+        run = EvaluationRun.objects.create(provider="mock", total_cases=1)
+        result = EvaluationCaseResult.objects.create(
+            evaluation_run=run, case_id="c1", passed=True, score=1.0,
+            citation_count=2, citation_chapters=["PROBA"],
+            required_terms_found=["binomiale"], failures=[],
+        )
+        self.assertEqual(run.case_results.count(), 1)
+        self.assertEqual(result.evaluation_run_id, run.id)
+        self.assertIsNone(result.interaction_id)
+
+    def test_evaluate_tutor_save_creates_run_and_case_results(self):
+        _load("prepare_embedding_chunks", "--mock")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = _write_tutor_cases(tmpdir, self._PASS_REFUSE_YAML)
+            call_command("evaluate_tutor", "--cases", path, "--save",
+                         "--fail-under", "0.0", stdout=_NULL(), stderr=_NULL())
+        self.assertEqual(EvaluationRun.objects.count(), 1)
+        run = EvaluationRun.objects.get()
+        self.assertEqual(run.provider, "mock")
+        self.assertEqual(run.total_cases, 2)
+        self.assertEqual(run.case_results.count(), 2)
+        # The non-refusal case should link to an AIInteraction and store a preview.
+        pass_case = run.case_results.get(case_id="pass_case")
+        self.assertIsNotNone(pass_case.interaction_id)
+        self.assertTrue(pass_case.answer_preview)
+
+    def test_evaluate_tutor_no_save_creates_no_run(self):
+        _load("prepare_embedding_chunks", "--mock")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = _write_tutor_cases(tmpdir, self._PASS_REFUSE_YAML)
+            call_command("evaluate_tutor", "--cases", path, "--no-save",
+                         "--fail-under", "0.0", stdout=_NULL(), stderr=_NULL())
+        self.assertEqual(EvaluationRun.objects.count(), 0)
+        self.assertEqual(EvaluationCaseResult.objects.count(), 0)
+
+    def test_evaluate_tutor_json_includes_evaluation_run_id_when_saved(self):
+        _load("prepare_embedding_chunks", "--mock")
+        out = io.StringIO()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = _write_tutor_cases(tmpdir, self._PASS_REFUSE_YAML)
+            call_command("evaluate_tutor", "--cases", path, "--json", "--save",
+                         "--fail-under", "0.0", stdout=out, stderr=_NULL())
+        payload = json.loads(out.getvalue())
+        self.assertIsNotNone(payload["evaluation_run_id"])
+        self.assertTrue(EvaluationRun.objects.filter(pk=payload["evaluation_run_id"]).exists())
+
+    def test_evaluate_tutor_list_runs(self):
+        _load("prepare_embedding_chunks", "--mock")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = _write_tutor_cases(tmpdir, self._PASS_REFUSE_YAML)
+            call_command("evaluate_tutor", "--cases", path, "--save",
+                         "--fail-under", "0.0", stdout=_NULL(), stderr=_NULL())
+        run = EvaluationRun.objects.get()
+        out = io.StringIO()
+        call_command("evaluate_tutor", "--list-runs", stdout=out, stderr=_NULL())
+        self.assertIn(f"#{run.id}", out.getvalue())
+
+    def test_evaluate_tutor_show_run(self):
+        _load("prepare_embedding_chunks", "--mock")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = _write_tutor_cases(tmpdir, self._PASS_REFUSE_YAML)
+            call_command("evaluate_tutor", "--cases", path, "--save",
+                         "--fail-under", "0.0", stdout=_NULL(), stderr=_NULL())
+        run = EvaluationRun.objects.get()
+        out = io.StringIO()
+        call_command("evaluate_tutor", "--show-run", str(run.id), stdout=out, stderr=_NULL())
+        text = out.getvalue()
+        self.assertIn(f"Evaluation run #{run.id}", text)
+        self.assertIn("pass_case", text)
+        self.assertIn("refusal_case", text)
+
+    def test_evaluate_tutor_threshold_failure_still_stores_failed_run(self):
+        _load("prepare_embedding_chunks", "--mock")
+        fail_yaml = """
+- id: forced_failure
+  query: "Explique la loi binomiale"
+  section: "SC_EXP"
+  subject: "MATH"
+  chapter: "PROBA"
+  expected_refused: false
+  required_terms: ["term_that_will_not_appear"]
+  required_citation_chapters: ["PROBA"]
+  minimum_citations: 1
+"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = _write_tutor_cases(tmpdir, fail_yaml)
+            with self.assertRaises(SystemExit):
+                call_command("evaluate_tutor", "--cases", path, "--save",
+                             "--fail-under", "1.0", stdout=_NULL(), stderr=_NULL())
+        run = EvaluationRun.objects.order_by("-id").first()
+        self.assertIsNotNone(run)
+        self.assertFalse(run.passed_threshold)
+        self.assertEqual(run.failed_cases, 1)
+        failed = run.case_results.get(case_id="forced_failure")
+        self.assertFalse(failed.passed)
+        self.assertTrue(failed.failures)  # failure detail stored honestly
+
+    def test_evaluate_tutor_save_does_not_use_paid_clients(self):
+        _load("prepare_embedding_chunks", "--mock")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = _write_tutor_cases(tmpdir, self._PASS_REFUSE_YAML)
+            with patch("ai.llm_client.OpenAIClient",
+                       side_effect=AssertionError("OpenAI should not be used")):
+                with patch("ai.llm_client.AnthropicClient",
+                           side_effect=AssertionError("Anthropic should not be used")):
+                    call_command("evaluate_tutor", "--cases", path, "--save",
+                                 "--fail-under", "0.0", stdout=_NULL(), stderr=_NULL())
+        self.assertEqual(EvaluationRun.objects.count(), 1)

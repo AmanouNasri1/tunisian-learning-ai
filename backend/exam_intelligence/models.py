@@ -564,3 +564,74 @@ class MistakeNotebookEntry(models.Model):
 
     def __str__(self):
         return f"Notebook[{self.student}] {self.concept or self.common_mistake}"
+
+
+# --------------------------------------------------------------------------- #
+# Evaluation tracking
+# --------------------------------------------------------------------------- #
+
+class EvaluationRun(models.Model):
+    """One persisted tutor evaluation run.
+
+    Lets us compare quality over time across providers (mock / openai / anthropic),
+    models, prompt versions, and retrieval versions. Stores the aggregate result;
+    per-case detail lives in EvaluationCaseResult. No secrets are stored.
+    """
+    created_at = models.DateTimeField(auto_now_add=True)
+    provider = models.CharField(max_length=32)
+    model_name = models.CharField(max_length=64, blank=True)
+    cases_path = models.CharField(max_length=512, blank=True)
+    total_cases = models.PositiveIntegerField(default=0)
+    passed_cases = models.PositiveIntegerField(default=0)
+    failed_cases = models.PositiveIntegerField(default=0)
+    score = models.FloatField(default=0.0)
+    fail_under = models.FloatField(default=0.0)
+    passed_threshold = models.BooleanField(default=False)
+    duration_ms = models.PositiveIntegerField(default=0)
+    git_commit_sha = models.CharField(max_length=64, blank=True)
+    notes = models.TextField(blank=True)
+    metadata_json = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["-created_at"]),
+            models.Index(fields=["provider", "model_name"]),
+        ]
+
+    def __str__(self):
+        return (f"EvalRun#{self.pk} {self.provider}/{self.model_name or '?'} "
+                f"score={self.score:.3f}")
+
+
+class EvaluationCaseResult(models.Model):
+    """Per-case outcome within an EvaluationRun (stores preview, not full answer)."""
+    evaluation_run = models.ForeignKey(EvaluationRun, on_delete=models.CASCADE,
+                                       related_name="case_results")
+    case_id = models.CharField(max_length=128)
+    query = models.TextField(blank=True)
+    expected_refused = models.BooleanField(default=False)
+    actual_refused = models.BooleanField(null=True, blank=True)
+    passed = models.BooleanField(default=False)
+    score = models.FloatField(default=0.0)
+    failures = models.JSONField(default=list, blank=True)
+    required_terms_found = models.JSONField(default=list, blank=True)
+    required_terms_missing = models.JSONField(default=list, blank=True)
+    forbidden_terms_found = models.JSONField(default=list, blank=True)
+    citation_count = models.PositiveIntegerField(default=0)
+    citation_chapters = models.JSONField(default=list, blank=True)
+    interaction = models.ForeignKey(AIInteraction, on_delete=models.SET_NULL,
+                                    null=True, blank=True, related_name="eval_case_results")
+    answer_preview = models.TextField(blank=True)
+    diagnostics_json = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["evaluation_run", "case_id"]
+        indexes = [
+            models.Index(fields=["evaluation_run", "case_id"]),
+            models.Index(fields=["passed"]),
+        ]
+
+    def __str__(self):
+        return f"{self.evaluation_run_id}:{self.case_id} {'PASS' if self.passed else 'FAIL'}"

@@ -120,7 +120,7 @@ $env:DATABASE_URL='sqlite:///dev.sqlite3'; python manage.py smoke_test_exam_inte
 | `smoke_test_rag_context` | Builds structured RAG context packages for representative queries. No LLM calls and no paid APIs. |
 | `ask_tutor "<question>" [--provider mock\|openai\|anthropic] [--section CODE] [--subject CODE] [--chapter CODE] [--top-k N] [--json]` | Ask the source-grounded tutor. Default provider is safe deterministic `mock`; real providers require explicit selection and API keys. |
 | `smoke_test_tutor` | Exercises grounded mock tutor answers and an out-of-scope refusal. No paid APIs. |
-| `evaluate_tutor [--cases evaluation/tutor_cases.yaml] [--json] [--fail-under 0.8] [--verbose]` | Runs deterministic golden tutor cases with the mock provider. No LLM judge and no paid APIs. |
+| `evaluate_tutor [--cases ...] [--json] [--fail-under 0.8] [--verbose] [--save\|--no-save] [--notes "..."] [--list-runs] [--show-run <id>]` | Runs deterministic golden tutor cases with the mock provider (no LLM judge, no paid APIs). **Persists each run by default** (`EvaluationRun` + `EvaluationCaseResult`). `--no-save` is a dry check. `--list-runs` / `--show-run <id>` inspect history. |
 
 ### Embedding workflow
 
@@ -221,6 +221,60 @@ Add a case by appending YAML like:
 The evaluator checks refusal correctness, citations, citation chapters, required/forbidden
 terms, diagnostics, provider metadata, and that only `provider=mock` is used. It is not an
 LLM judge; it is a deterministic safety gate.
+
+### Persistent evaluation run tracking
+
+Each evaluation is **saved by default** so quality can be compared over time — across the
+mock baseline, future OpenAI/Anthropic providers, fine-tuned models, prompt versions, and
+retrieval versions. This baseline matters *before* enabling any real (paid) LLM provider:
+you want a recorded mock score to compare a real provider against, and an audit trail of
+exactly what changed.
+
+```powershell
+python manage.py evaluate_tutor --verbose --save      # run + persist (default is --save)
+python manage.py evaluate_tutor --json --save         # JSON output includes evaluation_run_id
+python manage.py evaluate_tutor --no-save             # dry check, nothing written
+python manage.py evaluate_tutor --notes "baseline before openai"   # annotate a run
+python manage.py evaluate_tutor --list-runs           # recent runs
+python manage.py evaluate_tutor --show-run 1          # one run + per-case results
+```
+
+Saved-run output:
+
+```text
+Tutor evaluation
+============================================================
+cases      : 8
+passed     : 8
+failed     : 0
+score      : 1.000
+fail-under : 0.8
+provider   : mock/mock-tutor-v1
+duration   : 42 ms
+evaluation_run_id: 1
+...
+RESULT: PASS
+```
+
+Threshold failures are still persisted honestly: the command exits nonzero, but the
+`EvaluationRun` is stored with `passed_threshold=False` and each failing
+`EvaluationCaseResult` keeps its `failures` list.
+
+**What is stored** (no secrets, no full answers):
+
+- `EvaluationRun`: `created_at`, `provider`, `model_name`, `cases_path`, `total_cases`,
+  `passed_cases`, `failed_cases`, `score`, `fail_under`, `passed_threshold`, `duration_ms`,
+  `git_commit_sha` (best-effort), `notes`, `metadata_json`.
+- `EvaluationCaseResult`: `case_id`, `query`, `expected_refused`, `actual_refused`, `passed`,
+  `score`, `failures`, `required_terms_found/missing`, `forbidden_terms_found`,
+  `citation_count`, `citation_chapters`, FK to `AIInteraction`, `answer_preview` (≤300 chars,
+  not the full answer), `diagnostics_json`.
+
+Inspect from a shell:
+
+```powershell
+python manage.py shell -c "from backend.exam_intelligence.models import EvaluationRun, EvaluationCaseResult; print('runs=', EvaluationRun.objects.count()); print('case_results=', EvaluationCaseResult.objects.count())"
+```
 
 ## Testing & verification
 

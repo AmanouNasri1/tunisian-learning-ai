@@ -17,3 +17,5 @@ media/
 .DS_Store
 .idea/
 .vscode/
+
+.uv-cache/

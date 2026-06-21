@@ -10,9 +10,10 @@ from django.contrib import admin
 
 from .models import (
     AIInteraction, BacSection, Chapter, CommonMistake, Concept, Correction,
-    CurriculumEra, Exam, ExamExercise, ExamQuestion, EmbeddingChunk,
-    ExerciseTag, KnowledgeState, MistakeNotebookEntry, RubricItem,
-    SectionSubject, SourceDocument, StudentAttempt, Subject,
+    CurriculumEra, EvaluationCaseResult, EvaluationRun, Exam, ExamExercise,
+    ExamQuestion, EmbeddingChunk, ExerciseTag, KnowledgeState,
+    MistakeNotebookEntry, RubricItem, SectionSubject, SourceDocument,
+    StudentAttempt, Subject,
 )
 
 
@@ -215,3 +216,40 @@ class MistakeNotebookEntryAdmin(admin.ModelAdmin):
     list_filter = ("resolved",)
     search_fields = ("student__username", "note")
     autocomplete_fields = ("concept", "common_mistake", "attempt")
+
+
+# --- Evaluation tracking ---------------------------------------------------- #
+
+class EvaluationCaseResultInline(admin.TabularInline):
+    model = EvaluationCaseResult
+    extra = 0
+    can_delete = False
+    fields = ("case_id", "passed", "score", "expected_refused", "actual_refused",
+              "citation_count")
+    readonly_fields = fields
+    show_change_link = True
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(EvaluationRun)
+class EvaluationRunAdmin(admin.ModelAdmin):
+    list_display = ("id", "created_at", "provider", "model_name", "score",
+                    "passed_threshold", "total_cases", "passed_cases", "failed_cases",
+                    "duration_ms")
+    list_filter = ("provider", "passed_threshold", "model_name")
+    search_fields = ("notes", "git_commit_sha", "cases_path")
+    readonly_fields = ("created_at",)
+    date_hierarchy = "created_at"
+    inlines = (EvaluationCaseResultInline,)
+
+
+@admin.register(EvaluationCaseResult)
+class EvaluationCaseResultAdmin(admin.ModelAdmin):
+    list_display = ("evaluation_run", "case_id", "passed", "score",
+                    "expected_refused", "actual_refused", "citation_count")
+    list_filter = ("passed", "expected_refused")
+    search_fields = ("case_id", "query")
+    readonly_fields = ("created_at",)
+    autocomplete_fields = ("interaction",)

@@ -1,18 +1,28 @@
-"""Deterministic evaluator for source-grounded tutor answers."""
+"""Deterministic evaluator for source-grounded tutor answers.
+
+Can optionally persist each run (EvaluationRun + EvaluationCaseResult) so quality
+can be compared over time across providers, models, prompts, and retrieval versions.
+Persistence is opt-in via save=True; no secrets are stored.
+"""
 
 from __future__ import annotations
 
+import subprocess
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import yaml
 
+from django.db import transaction
+
 from rag.text_normalization import normalize_text
-from rag.tutor import answer_student_question
+from rag.tutor import MOCK_TUTOR_MODEL, answer_student_question
 
 
 DEFAULT_CASES_PATH = Path("evaluation/tutor_cases.yaml")
+ANSWER_PREVIEW_CHARS = 300
 
 
 @dataclass(frozen=True)
@@ -39,19 +49,54 @@ def load_tutor_cases(path: str | Path = DEFAULT_CASES_PATH) -> list[TutorCase]:
     return [_case_from_dict(item) for item in raw]
 
 
-def evaluate_tutor_cases(path: str | Path = DEFAULT_CASES_PATH, verbose: bool = False) -> dict:
+def evaluate_tutor_cases(
+    path: str | Path = DEFAULT_CASES_PATH,
+    verbose: bool = False,
+    *,
+    save: bool = False,
+    notes: str = "",
+    metadata: dict | None = None,
+    fail_under: float = 0.0,
+) -> dict:
+    """Evaluate all cases. If save=True, persist the run and return its id.
+
+    Returns the usual summary plus: fail_under, passed_threshold, duration_ms,
+    provider, model_name, evaluation_run_id (None when not saved).
+    """
     cases = load_tutor_cases(path)
+    started = time.perf_counter()
     results = [evaluate_case(case, verbose=verbose) for case in cases]
+    duration_ms = int((time.perf_counter() - started) * 1000)
+
     passed = sum(1 for result in results if result["passed"])
     total = len(results)
     score = passed / total if total else 0.0
-    return {
+    passed_threshold = score >= fail_under
+
+    provider = "mock"  # the evaluator always exercises the mock provider (no paid APIs)
+    model_name = next((r.get("model_name") for r in results if r.get("model_name")),
+                      MOCK_TUTOR_MODEL)
+
+    summary = {
         "cases": total,
         "passed": passed,
         "failed": total - passed,
         "score": score,
         "results": results,
+        "fail_under": fail_under,
+        "passed_threshold": passed_threshold,
+        "duration_ms": duration_ms,
+        "provider": provider,
+        "model_name": model_name,
+        "evaluation_run_id": None,
     }
+
+    if save:
+        summary["evaluation_run_id"] = _persist_run(
+            summary=summary, results=results, cases_path=str(path),
+            provider=provider, model_name=model_name, notes=notes, metadata=metadata,
+        )
+    return summary
 
 
 def evaluate_case(case: TutorCase, verbose: bool = False) -> dict:
@@ -151,11 +196,78 @@ def evaluate_case(case: TutorCase, verbose: bool = False) -> dict:
         "required_terms_missing": required_missing,
         "forbidden_terms_found": forbidden_found,
         "interaction_id": tutor_result.get("interaction_id"),
+        "model_name": tutor_result.get("model_name", ""),
+        # Always present (short + structured) so a run can be persisted without
+        # needing verbose. The command still only PRINTS these when --verbose.
+        "answer_preview": " ".join(answer_text.split())[:ANSWER_PREVIEW_CHARS],
+        "diagnostics": tutor_result.get("diagnostics", {}),
     }
-    if verbose:
-        result["answer_preview"] = " ".join(answer_text.split())[:300]
-        result["diagnostics"] = tutor_result.get("diagnostics", {})
     return result
+
+
+def _persist_run(*, summary: dict, results: list[dict], cases_path: str,
+                 provider: str, model_name: str, notes: str,
+                 metadata: dict | None) -> int:
+    """Persist one EvaluationRun and its per-case results. Returns the run id.
+
+    Stored even when the run failed its threshold (failures kept honestly). Only
+    a short answer preview is stored, never the full answer; no secrets.
+    """
+    # Imported here so this module stays importable in non-DB contexts.
+    from backend.exam_intelligence.models import EvaluationCaseResult, EvaluationRun
+
+    with transaction.atomic():
+        run = EvaluationRun.objects.create(
+            provider=provider,
+            model_name=model_name or "",
+            cases_path=cases_path,
+            total_cases=summary["cases"],
+            passed_cases=summary["passed"],
+            failed_cases=summary["failed"],
+            score=summary["score"],
+            fail_under=summary["fail_under"],
+            passed_threshold=summary["passed_threshold"],
+            duration_ms=summary["duration_ms"],
+            git_commit_sha=_git_commit_sha(),
+            notes=notes or "",
+            metadata_json=metadata or {},
+        )
+        EvaluationCaseResult.objects.bulk_create([
+            EvaluationCaseResult(
+                evaluation_run=run,
+                case_id=r["case_id"],
+                query=r.get("query", ""),
+                expected_refused=bool(r.get("expected_refused")),
+                actual_refused=r.get("actual_refused"),
+                passed=bool(r["passed"]),
+                score=float(r.get("score") or 0.0),
+                failures=r.get("failures", []),
+                required_terms_found=r.get("required_terms_found", []),
+                required_terms_missing=r.get("required_terms_missing", []),
+                forbidden_terms_found=r.get("forbidden_terms_found", []),
+                citation_count=int(r.get("citation_count") or 0),
+                citation_chapters=r.get("citation_chapters", []),
+                interaction_id=r.get("interaction_id"),
+                answer_preview=r.get("answer_preview", "") or "",
+                diagnostics_json=r.get("diagnostics", {}) or {},
+            )
+            for r in results
+        ])
+    return run.id
+
+
+def _git_commit_sha() -> str:
+    """Best-effort short commit SHA; empty string if git is unavailable."""
+    try:
+        out = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if out.returncode == 0:
+            return out.stdout.strip()
+    except Exception:
+        pass
+    return ""
 
 
 def _case_from_dict(item: dict[str, Any]) -> TutorCase:
