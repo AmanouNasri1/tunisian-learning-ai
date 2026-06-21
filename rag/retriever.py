@@ -4,9 +4,9 @@ RAG retrieval service.
 Pipeline: filter -> hybrid search (vector + keyword) -> RRF fuse -> rerank ->
 relevance/recency weighting -> threshold check -> grounded result.
 
-Vector search uses pgvector (PostgreSQL). Keyword search uses portable ORM
-icontains matching over chunk content + denormalized metadata (works on any
-backend, including SQLite for local checks). Django models are imported lazily
+Vector search uses pgvector (PostgreSQL). Keyword search uses portable
+accent-insensitive matching over chunk content + denormalized metadata (works on
+any backend, including SQLite for local checks). Django models are imported lazily
 inside the DB methods so this module stays importable without Django configured.
 
 Nothing here fabricates content. If retrieval is weak it says so (is_weak).
@@ -15,8 +15,9 @@ Nothing here fabricates content. If retrieval is weak it says so (is_weak).
 from __future__ import annotations
 
 import os
-import re
 from dataclasses import dataclass, field
+
+from rag.text_normalization import normalize_text, normalized_tokens
 
 
 @dataclass
@@ -107,33 +108,31 @@ class Retriever:
         return [self._to_chunk(c, 1.0 - float(c.distance)) for c in qs]
 
     def _keyword_search(self, query: str, filters: RetrievalFilters, limit: int) -> list[RetrievedChunk]:
-        """Portable keyword/metadata search (icontains over content + names)."""
-        from django.db.models import Q
+        """Portable accent-insensitive keyword/metadata search."""
         from backend.exam_intelligence.models import EmbeddingChunk
 
-        terms = [t for t in re.split(r"\s+", query.strip().lower()) if t]
+        terms = normalized_tokens(query)
         if not terms:
             return []
-        match = Q()
-        for t in terms:
-            match |= (Q(content__icontains=t) | Q(subject__name_fr__icontains=t)
-                      | Q(section__name_fr__icontains=t) | Q(chapter__name_fr__icontains=t))
-        qs = self._apply_filters(EmbeddingChunk.objects.filter(match), filters)
-        qs = qs.select_related("subject", "section", "chapter")[:max(limit * 5, 100)]
 
-        scored: list[tuple[int, object]] = []
+        qs = self._apply_filters(EmbeddingChunk.objects.all(), filters)
+        qs = qs.select_related("subject", "section", "chapter").order_by("id")
+
+        scored: list[tuple[int, int, object]] = []
         for c in qs:
-            haystack = " ".join(filter(None, [
-                c.content,
-                c.subject.name_fr if c.subject else "",
-                c.section.name_fr if c.section else "",
-                c.chapter.name_fr if c.chapter else "",
-            ])).lower()
-            hits = sum(1 for t in terms if t in haystack)
-            if hits:
-                scored.append((hits, c))
-        scored.sort(key=lambda x: x[0], reverse=True)
-        return [self._to_chunk(c, float(hits)) for hits, c in scored[:limit]]
+            haystack = normalize_text(self._keyword_haystack(c))
+            haystack_tokens = set(normalized_tokens(haystack))
+            exact_hits = sum(1 for term in terms if term in haystack_tokens)
+            substring_hits = sum(
+                1 for term in terms if term not in haystack_tokens and term in haystack)
+            score = (exact_hits * 2) + substring_hits
+            if score:
+                scored.append((score, exact_hits, c))
+        scored.sort(
+            key=lambda x: (x[0], x[1], x[2].relevance_weight, x[2].year or 0),
+            reverse=True,
+        )
+        return [self._to_chunk(c, float(score)) for score, _exact_hits, c in scored[:limit]]
 
     # --- helpers ------------------------------------------------------------ #
 
@@ -154,6 +153,26 @@ class Retriever:
         return qs
 
     @staticmethod
+    def _keyword_haystack(c) -> str:
+        subject = c.subject
+        section = c.section
+        chapter = c.chapter
+        return " ".join(filter(None, [
+            c.content,
+            c.content_type,
+            c.source_object_type,
+            subject.code if subject else "",
+            subject.name_fr if subject else "",
+            subject.name_ar if subject else "",
+            section.code if section else "",
+            section.name_fr if section else "",
+            section.name_ar if section else "",
+            chapter.code if chapter else "",
+            chapter.name_fr if chapter else "",
+            chapter.name_ar if chapter else "",
+        ]))
+
+    @staticmethod
     def _to_chunk(c, score: float) -> RetrievedChunk:
         citation = (f"{c.content_type} chunk#{c.id} "
                     f"({c.source_object_type}#{c.source_object_id}, {c.year or '?'})")
@@ -172,11 +191,13 @@ class Retriever:
 
     @staticmethod
     def _reciprocal_rank_fusion(*ranked_lists, k: int = 60) -> list[RetrievedChunk]:
+        weights = [1.0, 1.35]  # vector, keyword; lexical evidence should win close ties.
         scores: dict[int, float] = {}
         objs: dict[int, RetrievedChunk] = {}
-        for ranked in ranked_lists:
+        for list_index, ranked in enumerate(ranked_lists):
+            weight = weights[list_index] if list_index < len(weights) else 1.0
             for rank, chunk in enumerate(ranked):
-                scores[chunk.chunk_id] = scores.get(chunk.chunk_id, 0.0) + 1.0 / (k + rank + 1)
+                scores[chunk.chunk_id] = scores.get(chunk.chunk_id, 0.0) + weight / (k + rank + 1)
                 objs[chunk.chunk_id] = chunk
         out = []
         for cid, s in sorted(scores.items(), key=lambda kv: kv[1], reverse=True):

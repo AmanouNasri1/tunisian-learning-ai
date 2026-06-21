@@ -27,7 +27,16 @@ from backend.exam_intelligence.management.commands.prepare_embedding_chunks impo
 )
 from rag.retriever import Retriever, RetrievalFilters
 
-QUERIES = ["probabilité", "fonction", "SVT génétique", "circuit électrique", "physique"]
+QUERIES = [
+    "probabilit\u00e9",
+    "probabilite",
+    "circuit \u00e9lectrique",
+    "circuit electrique",
+    "g\u00e9n\u00e9tique",
+    "genetique",
+    "d\u00e9riv\u00e9e",
+    "derivee",
+]
 
 
 class _MockEmbedder:

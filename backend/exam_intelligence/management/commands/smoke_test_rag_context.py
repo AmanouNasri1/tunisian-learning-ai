@@ -12,10 +12,13 @@ from rag.context_builder import RAGContextBuilder
 
 QUERIES = [
     "probabilit\u00e9",
-    "fonction",
-    "SVT g\u00e9n\u00e9tique",
+    "probabilite",
     "circuit \u00e9lectrique",
-    "physique",
+    "circuit electrique",
+    "g\u00e9n\u00e9tique",
+    "genetique",
+    "d\u00e9riv\u00e9e",
+    "derivee",
 ]
 
 

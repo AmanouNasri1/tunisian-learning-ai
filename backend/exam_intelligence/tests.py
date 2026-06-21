@@ -89,6 +89,25 @@ class BackendVerificationTests(TestCase):
         self.assertNotEqual(first, other)
         self.assertEqual(len(first), EMBEDDING_DIM)
 
+    def test_text_normalization_handles_french_accents_safely(self):
+        from rag.text_normalization import normalize_text
+
+        cases = {
+            "probabilit\u00e9": "probabilite",
+            "\u00e9lectricit\u00e9": "electricite",
+            "d\u00e9riv\u00e9e": "derivee",
+            "g\u00e9n\u00e9tique": "genetique",
+            "fr\u00e9quence": "frequence",
+            "r\u00e9sonance": "resonance",
+            "l\u2019\u00e9lectricit\u00e9": "l'electricite",
+            "  Circuit   \u00e9lectrique  ": "circuit electrique",
+        }
+        for source, expected in cases.items():
+            self.assertEqual(normalize_text(source), expected)
+        self.assertEqual(normalize_text(None), "")
+        self.assertIn("+\u221e", normalize_text("+\u221e \u00b2 \u221a"))
+        self.assertEqual(normalize_text("\u0639\u064e\u0631\u064e\u0628\u0650\u064a"), "\u0639\u064e\u0631\u064e\u0628\u0650\u064a")
+
     def test_embed_chunks_provider_mock_updates_limited_pending_chunks(self):
         from ai.embeddings import MOCK_MODEL_NAME
 
@@ -146,6 +165,60 @@ class BackendVerificationTests(TestCase):
         self.assertEqual(data["query"], "fonction")
         self.assertIn("grouped_context", data)
         self.assertIn("selected_chunks", data)
+
+    def test_accented_unaccented_keyword_retrieval_equivalence(self):
+        from rag.retriever import Retriever, RetrievalFilters
+
+        _load("prepare_embedding_chunks")
+        retriever = Retriever()
+        pairs = [
+            ("probabilit\u00e9", "probabilite"),
+            ("circuit \u00e9lectrique", "circuit electrique"),
+            ("g\u00e9n\u00e9tique", "genetique"),
+            ("d\u00e9riv\u00e9e", "derivee"),
+        ]
+        for accented, unaccented in pairs:
+            accented_hits = retriever._keyword_search(accented, RetrievalFilters(), limit=10)
+            unaccented_hits = retriever._keyword_search(unaccented, RetrievalFilters(), limit=10)
+            self.assertEqual(
+                [(hit.chunk_id, hit.content_type) for hit in accented_hits],
+                [(hit.chunk_id, hit.content_type) for hit in unaccented_hits],
+                msg=f"{accented!r} vs {unaccented!r}",
+            )
+
+    def test_unaccented_keyword_queries_return_expected_curriculum_chunks(self):
+        from rag.retriever import Retriever, RetrievalFilters
+        from rag.text_normalization import normalize_text
+
+        _load("prepare_embedding_chunks")
+        retriever = Retriever()
+
+        proba = retriever._keyword_search("probabilite", RetrievalFilters(), limit=10)
+        self.assertTrue(any(hit.chapter_code == "PROBA" for hit in proba))
+
+        genetique = retriever._keyword_search("genetique", RetrievalFilters(), limit=10)
+        self.assertTrue(any(
+            hit.subject_code == "SVT" and hit.chapter_code == "GENETIQUE"
+            for hit in genetique
+        ))
+
+        derivee = retriever._keyword_search("derivee", RetrievalFilters(), limit=10)
+        self.assertTrue(any(
+            hit.chapter_code == "FONCTIONS" and "derivee" in normalize_text(hit.content)
+            for hit in derivee
+        ))
+
+    def test_rag_context_api_unaccented_queries_have_keyword_candidates(self):
+        _load("prepare_embedding_chunks", "--mock")
+        for query in ["probabilite", "circuit electrique", "genetique", "derivee"]:
+            resp = self.client.get("/api/rag/context/", {"q": query})
+            self.assertEqual(resp.status_code, 200)
+            data = resp.json()
+            self.assertGreater(
+                data["diagnostics"]["keyword_candidates"],
+                0,
+                msg=f"{query!r} returned no keyword candidates",
+            )
 
     def test_api_endpoints_return_200(self):
         for url in ["/api/sections/", "/api/subjects/", "/api/chapters/",
