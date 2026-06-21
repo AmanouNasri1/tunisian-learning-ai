@@ -10,8 +10,11 @@ from __future__ import annotations
 import argparse
 import json
 
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 
+from evaluation.run_comparator import (
+    EvaluationRunNotFound, compare_evaluation_runs, render_comparison_lines,
+)
 from evaluation.tutor_evaluator import DEFAULT_CASES_PATH, evaluate_tutor_cases
 
 
@@ -36,6 +39,9 @@ class Command(BaseCommand):
                             help="List recent persisted evaluation runs and exit.")
         parser.add_argument("--show-run", type=int, default=None,
                             help="Show one persisted run (with per-case results) and exit.")
+        parser.add_argument("--compare-to", type=int, default=None,
+                            help="After saving this run, compare it against an earlier "
+                                 "run id (baseline) and print the diff. Requires saving.")
 
     def handle(self, *args, **options):
         try:
@@ -58,10 +64,26 @@ class Command(BaseCommand):
             fail_under=options["fail_under"],
         )
 
+        comparison = None
+        if options["compare_to"] is not None:
+            if summary.get("evaluation_run_id") is None:
+                raise CommandError("--compare-to requires saving the new run; drop --no-save.")
+            try:
+                comparison = compare_evaluation_runs(
+                    options["compare_to"], summary["evaluation_run_id"])
+            except EvaluationRunNotFound as exc:
+                raise CommandError(str(exc))
+            summary["comparison"] = comparison
+
         if options["json"]:
-            self.stdout.write(json.dumps(summary, ensure_ascii=False, indent=2))
+            self.stdout.write(json.dumps(summary, ensure_ascii=False, indent=2, default=str))
         else:
             self._print_text(summary, verbose=options["verbose"])
+            if comparison is not None:
+                self.stdout.write("")
+                for line in render_comparison_lines(comparison, verbose=options["verbose"]):
+                    self.stdout.write(line)
+                self.stdout.write(f"comparison verdict: {comparison['summary']['verdict']}")
 
         if not summary["passed_threshold"]:
             # The run is already persisted (if --save); we still exit nonzero so CI fails.

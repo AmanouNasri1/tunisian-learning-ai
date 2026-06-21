@@ -120,7 +120,8 @@ $env:DATABASE_URL='sqlite:///dev.sqlite3'; python manage.py smoke_test_exam_inte
 | `smoke_test_rag_context` | Builds structured RAG context packages for representative queries. No LLM calls and no paid APIs. |
 | `ask_tutor "<question>" [--provider mock\|openai\|anthropic] [--section CODE] [--subject CODE] [--chapter CODE] [--top-k N] [--json]` | Ask the source-grounded tutor. Default provider is safe deterministic `mock`; real providers require explicit selection and API keys. |
 | `smoke_test_tutor` | Exercises grounded mock tutor answers and an out-of-scope refusal. No paid APIs. |
-| `evaluate_tutor [--cases ...] [--json] [--fail-under 0.8] [--verbose] [--save\|--no-save] [--notes "..."] [--list-runs] [--show-run <id>]` | Runs deterministic golden tutor cases with the mock provider (no LLM judge, no paid APIs). **Persists each run by default** (`EvaluationRun` + `EvaluationCaseResult`). `--no-save` is a dry check. `--list-runs` / `--show-run <id>` inspect history. |
+| `evaluate_tutor [--cases ...] [--json] [--fail-under 0.8] [--verbose] [--save\|--no-save] [--notes "..."] [--list-runs] [--show-run <id>] [--compare-to <id>]` | Runs deterministic golden tutor cases with the mock provider (no LLM judge, no paid APIs). **Persists each run by default** (`EvaluationRun` + `EvaluationCaseResult`). `--no-save` is a dry check. `--list-runs` / `--show-run <id>` inspect history. `--compare-to <id>` diffs the new run against an earlier baseline. |
+| `compare_eval_runs <run_a_id> <run_b_id> [--json] [--verbose] [--fail-on-regression]` | Diff two saved runs case-by-case (A=baseline, B=candidate). Detects score/pass-fail/refusal/citation/term regressions and improvements; prints a `verdict`. `--fail-on-regression` exits nonzero on `regression`/`mixed`. No paid APIs. |
 
 ### Embedding workflow
 
@@ -275,6 +276,32 @@ Inspect from a shell:
 ```powershell
 python manage.py shell -c "from backend.exam_intelligence.models import EvaluationRun, EvaluationCaseResult; print('runs=', EvaluationRun.objects.count()); print('case_results=', EvaluationCaseResult.objects.count())"
 ```
+
+### Comparing two runs (regression detection)
+
+This is the gate **before enabling a real (paid) LLM provider**: record a mock baseline, run
+the gated provider once, then diff the two runs. If the candidate scores lower, refuses
+something it used to answer, drops citations, loses required terms, or emits forbidden terms,
+the comparison flags a regression — so you never silently ship a worse tutor.
+
+```powershell
+python manage.py evaluate_tutor --verbose --save      # run 1 (baseline)
+python manage.py evaluate_tutor --verbose --save      # run 2 (candidate)
+python manage.py evaluate_tutor --list-runs           # find the two run ids
+python manage.py compare_eval_runs 1 2 --verbose      # human-readable diff
+python manage.py compare_eval_runs 1 2 --json         # machine-readable diff
+python manage.py compare_eval_runs 1 2 --fail-on-regression   # nonzero exit on regression (CI gate)
+```
+
+Shortcut — run a new saved evaluation and immediately diff it against a baseline:
+
+```powershell
+python manage.py evaluate_tutor --save --compare-to 1
+```
+
+`verdict` is one of `no_regression`, `improvement`, `regression`, `mixed` (mixed = both
+regressions and improvements present). `--fail-on-regression` exits nonzero on
+`regression` or `mixed`. Run ids are not hardcoded — pass whatever ids `--list-runs` shows.
 
 ## Testing & verification
 

@@ -382,3 +382,57 @@ Provider comparison reporting: a `compare_eval_runs <id_a> <id_b>` command (or
 `evaluate_tutor --compare`) that diffs two `EvaluationRun`s case-by-case (score delta,
 newly-failing cases, citation/refusal changes). That turns the now-stored history into the
 decision tool for safely enabling a real LLM provider behind its existing gate.
+
+---
+
+# Milestone: Provider-comparison reporting
+
+Goal: diff two persisted evaluation runs case-by-case so regressions are caught **before**
+enabling a real (paid) LLM provider. Backend-only; mock stays default; no paid APIs.
+
+## What changed
+
+- **New service `evaluation/run_comparator.py`** — `compare_evaluation_runs(run_a_id, run_b_id)`
+  returns `{run_a, run_b, summary, cases}`. Detects per-case regressions (pass→fail, score
+  drop, refusal regressed, in-scope citation drop, lost required terms, new forbidden terms)
+  and improvements; plus structural changes (`missing_in_run_a/b`). Verdict:
+  `no_regression` / `improvement` / `regression` / `mixed`. Raises `EvaluationRunNotFound`
+  for bad ids. Read-only; never touches an LLM client. Run ids are parameters — nothing is
+  hardcoded to 1/2.
+- **New command `compare_eval_runs <a> <b>`** — `--json`, `--verbose`, `--fail-on-regression`
+  (nonzero exit on `regression`/`mixed`). Invalid ids raise a clean `CommandError`.
+- **`evaluate_tutor --compare-to <id>`** — runs a new saved evaluation, then diffs it against
+  the baseline id and prints the verdict (errors cleanly if `--no-save`).
+- **Tests:** +14 (a dedicated `RunComparatorTests` built from direct model creation — no tutor,
+  no paid APIs — plus the `--compare-to` path). Covers identical=no_regression, score drop,
+  newly-failed/passing, refusal change, citation drop, term regressions, missing case, JSON,
+  fail-on-regression nonzero, no-regression exits zero, invalid id error.
+- **No migration** — comparison reads existing `EvaluationRun`/`EvaluationCaseResult`.
+- **Docs:** README comparison section + command-table rows; this entry.
+
+## Verified by running (SQLite, no PostgreSQL needed)
+
+| Check | Result |
+|---|---|
+| `manage.py check` | 0 issues |
+| `makemigrations --check --dry-run` | No changes detected (no new migration) |
+| `manage.py test backend.exam_intelligence` | **53 tests OK** (1 pgvector test skipped on SQLite) |
+| two `evaluate_tutor --verbose --save` | runs #1 and #2 persisted, score 1.000 each |
+| `compare_eval_runs 1 2 --verbose` | `verdict: no_regression`, `RESULT: NO REGRESSION`, all 8 cases `[OK]` |
+| `compare_eval_runs 1 2 --json` | structured `{run_a, run_b, summary, cases}` per the spec schema |
+| `compare_eval_runs 1 2 --fail-on-regression` | exit code 0 (no regression) |
+| `compare_eval_runs 999999 999998` | clean `CommandError`, nonzero exit |
+
+## Not verified
+
+- The real PostgreSQL/pgvector path (unchanged this milestone). Comparison is DB-agnostic and
+  was verified on SQLite.
+- No OpenAI/Anthropic calls — a test patches both clients to raise if instantiated during a
+  comparison, and it passes.
+
+## Recommended next milestone
+
+Backend is now solid through the evaluation-and-comparison gate, with no blocker found. The
+next milestone should be the **first frontend MVP**: a thin read-only UI over the existing
+APIs — ask the tutor (`POST /api/tutor/ask/`, mock provider), browse exercises/chapters, and
+view a citations panel — keeping the source-grounded + refusal behavior visible to users.

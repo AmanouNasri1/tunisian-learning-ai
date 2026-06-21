@@ -20,6 +20,7 @@ import tempfile
 from pathlib import Path
 
 from django.core.management import call_command
+from django.core.management.base import CommandError
 from django.db import connection
 from django.test import TestCase
 from unittest import skipUnless
@@ -651,3 +652,185 @@ class BackendVerificationTests(TestCase):
                     call_command("evaluate_tutor", "--cases", path, "--save",
                                  "--fail-under", "0.0", stdout=_NULL(), stderr=_NULL())
         self.assertEqual(EvaluationRun.objects.count(), 1)
+
+    def test_evaluate_tutor_compare_to_prints_verdict(self):
+        _load("prepare_embedding_chunks", "--mock")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = _write_tutor_cases(tmpdir, self._PASS_REFUSE_YAML)
+            call_command("evaluate_tutor", "--cases", path, "--save",
+                         "--fail-under", "0.0", stdout=_NULL(), stderr=_NULL())
+            baseline = EvaluationRun.objects.latest("id")
+            out = io.StringIO()
+            call_command("evaluate_tutor", "--cases", path, "--save", "--fail-under", "0.0",
+                         "--compare-to", str(baseline.id), stdout=out, stderr=_NULL())
+        self.assertEqual(EvaluationRun.objects.count(), 2)
+        self.assertIn("comparison verdict: no_regression", out.getvalue())
+
+
+class RunComparatorTests(TestCase):
+    """Comparison logic tested via direct model creation (no tutor, no paid APIs)."""
+
+    def _run(self, score=1.0, passed=2, failed=0, provider="mock", model="mock-tutor-v1"):
+        return EvaluationRun.objects.create(
+            provider=provider, model_name=model, score=score,
+            passed_cases=passed, failed_cases=failed, total_cases=passed + failed,
+        )
+
+    def _case(self, run, case_id, *, passed=True, score=1.0, refused=False,
+              expected_refused=False, citation_count=6, required_found=None,
+              forbidden_found=None, failures=None):
+        return EvaluationCaseResult.objects.create(
+            evaluation_run=run, case_id=case_id, passed=passed, score=score,
+            actual_refused=refused, expected_refused=expected_refused,
+            citation_count=citation_count,
+            required_terms_found=required_found or [],
+            forbidden_terms_found=forbidden_found or [],
+            failures=failures or [],
+        )
+
+    def test_identical_runs_no_regression(self):
+        from evaluation.run_comparator import compare_evaluation_runs
+
+        a = self._run()
+        b = self._run()
+        for cid in ["loi_binomiale", "circuit_rlc"]:
+            self._case(a, cid)
+            self._case(b, cid)
+        comp = compare_evaluation_runs(a.id, b.id)
+        self.assertEqual(comp["summary"]["verdict"], "no_regression")
+        self.assertEqual(comp["summary"]["regression_count"], 0)
+        self.assertEqual(comp["summary"]["improvement_count"], 0)
+        self.assertEqual(comp["summary"]["score_delta"], 0.0)
+
+    def test_score_decrease_is_detected(self):
+        from evaluation.run_comparator import compare_evaluation_runs
+
+        a = self._run(score=1.0)
+        b = self._run(score=0.5)
+        self._case(a, "c1", passed=True, score=1.0)
+        self._case(b, "c1", passed=True, score=0.5)
+        comp = compare_evaluation_runs(a.id, b.id)
+        self.assertEqual(comp["summary"]["verdict"], "regression")
+        self.assertLess(comp["summary"]["score_delta"], 0)
+        self.assertTrue(any("score_decreased" in r for r in comp["cases"][0]["regressions"]))
+
+    def test_newly_failed_case_is_detected(self):
+        from evaluation.run_comparator import compare_evaluation_runs
+
+        a = self._run()
+        b = self._run(score=0.5, passed=1, failed=1)
+        self._case(a, "c1", passed=True, score=1.0)
+        self._case(b, "c1", passed=False, score=0.0)
+        comp = compare_evaluation_runs(a.id, b.id)
+        self.assertIn("c1", comp["summary"]["newly_failed_cases"])
+        self.assertEqual(comp["summary"]["verdict"], "regression")
+
+    def test_newly_passing_case_is_detected(self):
+        from evaluation.run_comparator import compare_evaluation_runs
+
+        a = self._run(score=0.5, passed=1, failed=1)
+        b = self._run()
+        self._case(a, "c1", passed=False, score=0.0)
+        self._case(b, "c1", passed=True, score=1.0)
+        comp = compare_evaluation_runs(a.id, b.id)
+        self.assertIn("c1", comp["summary"]["newly_passing_cases"])
+        self.assertEqual(comp["summary"]["verdict"], "improvement")
+
+    def test_refusal_change_is_detected(self):
+        from evaluation.run_comparator import compare_evaluation_runs
+
+        a = self._run()
+        b = self._run(score=0.5, passed=1, failed=1)
+        # expected NOT to refuse; A behaves, B wrongly refuses -> refusal regressed
+        self._case(a, "c1", passed=True, refused=False, expected_refused=False, citation_count=6)
+        self._case(b, "c1", passed=False, refused=True, expected_refused=False, citation_count=0)
+        comp = compare_evaluation_runs(a.id, b.id)
+        self.assertEqual(len(comp["summary"]["changed_refusal_cases"]), 1)
+        self.assertEqual(comp["summary"]["changed_refusal_cases"][0]["case_id"], "c1")
+        self.assertEqual(comp["summary"]["verdict"], "regression")
+
+    def test_citation_count_decrease_is_detected(self):
+        from evaluation.run_comparator import compare_evaluation_runs
+
+        a = self._run()
+        b = self._run()
+        self._case(a, "c1", passed=True, refused=False, citation_count=6)
+        self._case(b, "c1", passed=True, refused=False, citation_count=3)
+        comp = compare_evaluation_runs(a.id, b.id)
+        self.assertEqual(len(comp["summary"]["citation_count_changes"]), 1)
+        self.assertEqual(comp["summary"]["citation_count_changes"][0]["delta"], -3)
+        self.assertEqual(comp["summary"]["verdict"], "regression")
+
+    def test_required_and_forbidden_term_regressions(self):
+        from evaluation.run_comparator import compare_evaluation_runs
+
+        a = self._run()
+        b = self._run()
+        self._case(a, "c1", required_found=["binomiale"], forbidden_found=[])
+        self._case(b, "c1", required_found=[], forbidden_found=["pizza"])
+        comp = compare_evaluation_runs(a.id, b.id)
+        self.assertEqual(comp["summary"]["required_term_regressions"][0]["terms"], ["binomiale"])
+        self.assertEqual(comp["summary"]["forbidden_term_regressions"][0]["terms"], ["pizza"])
+        self.assertEqual(comp["summary"]["verdict"], "regression")
+
+    def test_missing_case_in_run_b_is_reported(self):
+        from evaluation.run_comparator import compare_evaluation_runs
+
+        a = self._run()
+        b = self._run(passed=1)
+        self._case(a, "c1")
+        self._case(a, "c2")
+        self._case(b, "c1")
+        comp = compare_evaluation_runs(a.id, b.id)
+        self.assertEqual(comp["summary"]["missing_in_run_b"], ["c2"])
+        self.assertEqual(comp["summary"]["verdict"], "regression")
+
+    def test_compare_command_json_works(self):
+        a = self._run()
+        b = self._run()
+        self._case(a, "c1")
+        self._case(b, "c1")
+        out = io.StringIO()
+        call_command("compare_eval_runs", str(a.id), str(b.id), "--json",
+                     stdout=out, stderr=_NULL())
+        data = json.loads(out.getvalue())
+        self.assertEqual(data["summary"]["verdict"], "no_regression")
+        self.assertEqual(data["run_a"]["id"], a.id)
+        self.assertEqual(data["run_b"]["id"], b.id)
+
+    def test_compare_command_fail_on_regression_exits_nonzero(self):
+        a = self._run()
+        b = self._run(score=0.0, passed=0, failed=1)
+        self._case(a, "c1", passed=True, score=1.0)
+        self._case(b, "c1", passed=False, score=0.0)
+        with self.assertRaises(SystemExit):
+            call_command("compare_eval_runs", str(a.id), str(b.id),
+                         "--fail-on-regression", stdout=_NULL(), stderr=_NULL())
+
+    def test_compare_command_no_regression_exits_zero(self):
+        a = self._run()
+        b = self._run()
+        self._case(a, "c1")
+        self._case(b, "c1")
+        # Should NOT raise SystemExit for identical runs.
+        call_command("compare_eval_runs", str(a.id), str(b.id),
+                     "--fail-on-regression", stdout=_NULL(), stderr=_NULL())
+
+    def test_compare_command_invalid_run_id_clean_error(self):
+        with self.assertRaises(CommandError):
+            call_command("compare_eval_runs", "999999", "999998",
+                         stdout=_NULL(), stderr=_NULL())
+
+    def test_comparison_does_not_use_paid_clients(self):
+        from evaluation.run_comparator import compare_evaluation_runs
+
+        a = self._run()
+        b = self._run()
+        self._case(a, "c1")
+        self._case(b, "c1")
+        with patch("ai.llm_client.OpenAIClient",
+                   side_effect=AssertionError("OpenAI should not be used")):
+            with patch("ai.llm_client.AnthropicClient",
+                       side_effect=AssertionError("Anthropic should not be used")):
+                comp = compare_evaluation_runs(a.id, b.id)
+        self.assertEqual(comp["summary"]["verdict"], "no_regression")
