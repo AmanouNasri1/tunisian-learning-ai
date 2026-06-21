@@ -1,0 +1,20 @@
+[
+  { "model": "exam_intelligence.bacsection", "pk": 1, "fields": { "code": "MATH", "name_fr": "Mathématiques", "name_ar": "رياضيات" } },
+  { "model": "exam_intelligence.bacsection", "pk": 2, "fields": { "code": "SC_EXP", "name_fr": "Sciences expérimentales", "name_ar": "علوم تجريبية" } },
+
+  { "model": "exam_intelligence.subject", "pk": 1, "fields": { "code": "MATH", "name_fr": "Mathématiques", "name_ar": "رياضيات" } },
+  { "model": "exam_intelligence.subject", "pk": 2, "fields": { "code": "PHYSIQUE", "name_fr": "Sciences physiques", "name_ar": "علوم فيزيائية" } },
+  { "model": "exam_intelligence.subject", "pk": 3, "fields": { "code": "SVT", "name_fr": "Sciences de la vie et de la terre", "name_ar": "علوم الحياة والأرض" } },
+
+  { "model": "exam_intelligence.sectionsubject", "pk": 1, "fields": { "section": 1, "subject": 1, "coefficient": "4.00" } },
+  { "model": "exam_intelligence.sectionsubject", "pk": 2, "fields": { "section": 1, "subject": 2, "coefficient": "4.00" } },
+  { "model": "exam_intelligence.sectionsubject", "pk": 3, "fields": { "section": 1, "subject": 3, "coefficient": "1.00" } },
+  { "model": "exam_intelligence.sectionsubject", "pk": 4, "fields": { "section": 2, "subject": 1, "coefficient": "3.00" } },
+  { "model": "exam_intelligence.sectionsubject", "pk": 5, "fields": { "section": 2, "subject": 2, "coefficient": "4.00" } },
+  { "model": "exam_intelligence.sectionsubject", "pk": 6, "fields": { "section": 2, "subject": 3, "coefficient": "4.00" } },
+
+  { "model": "exam_intelligence.curriculumera", "pk": 1, "fields": { "code": "ERA_2016_2025", "label": "Programme actuel", "start_year": 2016, "end_year": null, "relevance_weight": "1.00" } },
+  { "model": "exam_intelligence.curriculumera", "pk": 2, "fields": { "code": "ERA_2008_2015", "label": "Récent", "start_year": 2008, "end_year": 2015, "relevance_weight": "0.70" } },
+  { "model": "exam_intelligence.curriculumera", "pk": 3, "fields": { "code": "ERA_1995_2007", "label": "Ancien", "start_year": 1995, "end_year": 2007, "relevance_weight": "0.40" } },
+  { "model": "exam_intelligence.curriculumera", "pk": 4, "fields": { "code": "ERA_1980_1994", "label": "Patrimoine", "start_year": 1980, "end_year": 1994, "relevance_weight": "0.15" } }
+]

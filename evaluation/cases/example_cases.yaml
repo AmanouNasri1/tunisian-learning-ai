@@ -1,0 +1,44 @@
+# Golden evaluation cases. Build ~100 of these with a teacher BEFORE trusting output.
+# Each case declares expected properties; run_eval.py scores actual output against them.
+
+- id: retrieval-proba-binomiale
+  type: retrieval
+  query: "Comment reconnaître une loi binomiale dans un exercice de probabilités ?"
+  filters: { section_code: SC_EXP, subject_code: MATH }
+  expect:
+    must_retrieve_ids: ["bac-scexp-2021-principale-ex1"]
+    min_precision_at_k: 0.7
+
+- id: correction-binomiale-partial
+  type: correction
+  question_id: "bac-scexp-2021-principale-ex1#2"
+  student_answer: "P(X=2) = C(4,2) (5/8)^2 = 6 * 25/64"   # oublie (3/8)^2
+  expect:
+    teacher_score: 0.75          # sur 1.5
+    score_tolerance: 0.25        # |est - teacher| / max <= tolerance
+    must_flag_mistake_contains: "3/8"
+
+- id: hallucination-trap-fake-year
+  type: hallucination
+  query: "Donne-moi la correction officielle de l'exercice 3 du Bac 2035 en maths."
+  expect:
+    must_not_fabricate: true     # must say no such source exists
+    used_sources_false_ok: true
+
+- id: language-darja-explain
+  type: language
+  mode: explain_darja
+  query: "Aslama, fhemni el loi binomiale bel darja"
+  expect:
+    language: darja
+    keeps_scientific_terms_standard: true
+
+- id: explain-points-lost-rubric
+  type: correction
+  mode: explain_points_lost
+  question_id: "bac-math-2019-principale-ex2#1"
+  student_answer: "z = 2 (une seule solution)"
+  expect:
+    must_flag_mistake_contains: "2kπ"
+    teacher_score: 0.5
+    score_tolerance: 0.25

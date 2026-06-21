@@ -1,0 +1,71 @@
+{
+  "id": "bac-scexp-2021-principale-ex1",
+  "schema_version": "1.0",
+  "year": 2021,
+  "session": "principale",
+  "section": { "code": "SC_EXP", "name_fr": "Sciences expérimentales" },
+  "subject": { "code": "MATH", "name_fr": "Mathématiques" },
+  "curriculum_era": { "code": "ERA_2016_2025", "relevance_weight": 1.0 },
+  "chapter": { "code": "PROBA", "name_fr": "Probabilités" },
+  "concepts": ["loi_binomiale", "variable_aleatoire", "esperance"],
+  "exercise_text": "Une urne contient 5 boules blanches et 3 boules noires indiscernables au toucher. On tire successivement et avec remise 4 boules de l'urne. On note X la variable aléatoire égale au nombre de boules blanches obtenues.",
+  "difficulty": "medium",
+  "estimated_minutes": 20,
+  "questions": [
+    {
+      "number": "1",
+      "text": "Justifier que X suit une loi binomiale et préciser ses paramètres.",
+      "points": 1.5,
+      "concepts": ["loi_binomiale", "variable_aleatoire"]
+    },
+    {
+      "number": "2",
+      "text": "Calculer la probabilité d'obtenir exactement 2 boules blanches.",
+      "points": 1.5,
+      "concepts": ["loi_binomiale"]
+    },
+    {
+      "number": "3",
+      "text": "Calculer l'espérance mathématique E(X).",
+      "points": 1.0,
+      "concepts": ["esperance"]
+    }
+  ],
+  "correction": {
+    "is_official": true,
+    "author_type": "official",
+    "reliability": "high",
+    "items": [
+      {
+        "question": "1",
+        "text": "Les tirages sont identiques, indépendants (avec remise) et chaque tirage est un succès (boule blanche) avec probabilité p = 5/8. Donc X suit la loi binomiale de paramètres n = 4 et p = 5/8.",
+        "steps": ["Identifier répétition d'épreuves identiques et indépendantes", "Définir le succès et sa probabilité p = 5/8", "Conclure X ~ B(4, 5/8)"]
+      },
+      {
+        "question": "2",
+        "text": "P(X=2) = C(4,2) (5/8)^2 (3/8)^2 = 6 · 25/64 · 9/64 = 1350/4096 ≈ 0,330.",
+        "steps": ["Appliquer P(X=k) = C(n,k) p^k (1-p)^{n-k}", "Substituer k=2, n=4, p=5/8", "Calcul numérique"]
+      },
+      {
+        "question": "3",
+        "text": "E(X) = n·p = 4 · 5/8 = 2,5.",
+        "steps": ["Appliquer E(X) = n p", "Calcul"]
+      }
+    ]
+  },
+  "rubric": [
+    { "question": "1", "description": "Reconnaître épreuves indépendantes identiques", "points": 0.5, "keywords": ["avec remise", "indépendant", "identique"] },
+    { "question": "1", "description": "Paramètres n=4, p=5/8 corrects", "points": 1.0, "keywords": ["B(4", "5/8", "binomiale"] },
+    { "question": "2", "description": "Formule binomiale correcte", "points": 0.75, "keywords": ["C(4,2)", "p^k"] },
+    { "question": "2", "description": "Calcul numérique correct", "points": 0.75, "keywords": ["0,33", "1350/4096"] },
+    { "question": "3", "description": "E(X) = np = 2,5", "points": 1.0, "keywords": ["np", "2,5"] }
+  ],
+  "common_mistakes": [
+    { "description_fr": "Confondre loi binomiale et loi uniforme", "frequency": "common", "correct_approach": "Vérifier qu'il y a répétition d'épreuves de Bernoulli identiques et indépendantes." },
+    { "description_fr": "Utiliser un tirage sans remise (loi hypergéométrique) alors que l'énoncé dit 'avec remise'", "frequency": "common", "correct_approach": "Lire attentivement: 'avec remise' => indépendance => binomiale." }
+  ],
+  "source_document": { "file": "bac_2021_scexp_math_principale.pdf", "pages": "1" },
+  "ocr_confidence": 0.93,
+  "current_curriculum_relevance": { "status": "relevant", "score": 0.96, "validated_by_teacher": false },
+  "usage_recommendation": ["use_for_current_mock_exam", "use_for_extra_practice", "use_for_concept_training"]
+}

@@ -1,0 +1,71 @@
+{
+  "id": "bac-scexp-2020-principale-svt-ex2",
+  "schema_version": "1.0",
+  "year": 2020,
+  "session": "principale",
+  "section": { "code": "SC_EXP", "name_fr": "Sciences expérimentales" },
+  "subject": { "code": "SVT", "name_fr": "Sciences de la vie et de la terre" },
+  "curriculum_era": { "code": "ERA_2016_2025", "relevance_weight": 1.0 },
+  "chapter": { "code": "GENETIQUE", "name_fr": "Génétique humaine" },
+  "concepts": ["transmission_caracteres", "analyse_pedigree", "dominance_recessivite"],
+  "exercise_text": "Le document présente l'arbre généalogique (pedigree) d'une famille dont certains membres sont atteints d'une maladie héréditaire. On cherche à déterminer le mode de transmission de l'allèle responsable.",
+  "difficulty": "medium",
+  "estimated_minutes": 25,
+  "questions": [
+    {
+      "number": "1",
+      "text": "À partir de l'analyse du pedigree, déterminer si l'allèle responsable de la maladie est dominant ou récessif. Justifier.",
+      "points": 2.0,
+      "concepts": ["dominance_recessivite", "analyse_pedigree"]
+    },
+    {
+      "number": "2",
+      "text": "Déterminer si le gène est porté par un autosome ou par le chromosome sexuel X. Justifier à partir du document.",
+      "points": 2.0,
+      "concepts": ["transmission_caracteres"]
+    },
+    {
+      "number": "3",
+      "text": "Donner les génotypes possibles des parents du couple II-3 et II-4.",
+      "points": 1.5,
+      "concepts": ["transmission_caracteres"]
+    }
+  ],
+  "correction": {
+    "is_official": true,
+    "author_type": "official",
+    "reliability": "high",
+    "items": [
+      {
+        "question": "1",
+        "text": "Deux parents non atteints ont un enfant atteint: l'allèle responsable est donc récessif (les parents sont porteurs sains hétérozygotes).",
+        "steps": ["Repérer un couple de parents sains ayant un enfant atteint", "En déduire que l'allèle est récessif", "Justifier par la notion de porteur sain"]
+      },
+      {
+        "question": "2",
+        "text": "Si le gène était porté par X, un père atteint transmettrait l'allèle à toutes ses filles. Le document montre une fille saine issue d'un père atteint (ou un cas équivalent), donc le gène est autosomal.",
+        "steps": ["Tester l'hypothèse hérédité liée à X", "Trouver la contradiction dans le pedigree", "Conclure: gène autosomal"]
+      },
+      {
+        "question": "3",
+        "text": "Les parents sains ayant un enfant atteint (a//a) sont nécessairement hétérozygotes: génotype A//a pour chacun.",
+        "steps": ["Identifier le phénotype des parents", "Déduire qu'ils portent l'allèle a", "Écrire les génotypes A//a"]
+      }
+    ]
+  },
+  "rubric": [
+    { "question": "1", "description": "Conclusion 'récessif'", "points": 1.0, "keywords": ["récessif", "porteur sain"] },
+    { "question": "1", "description": "Justification par couple sain x enfant atteint", "points": 1.0, "keywords": ["parents non atteints", "enfant atteint"] },
+    { "question": "2", "description": "Test de l'hypothèse lié à X", "points": 1.0, "keywords": ["chromosome X", "père atteint", "filles"] },
+    { "question": "2", "description": "Conclusion 'autosomal' justifiée", "points": 1.0, "keywords": ["autosome", "autosomal"] },
+    { "question": "3", "description": "Génotypes A//a corrects", "points": 1.5, "keywords": ["A//a", "hétérozygote"] }
+  ],
+  "common_mistakes": [
+    { "description_fr": "Confondre dominant et récessif (conclure dominant alors que deux parents sains ont un enfant atteint)", "frequency": "very_common", "correct_approach": "Règle: deux parents de même phénotype ayant un enfant de phénotype différent => le caractère de l'enfant est récessif." },
+    { "description_fr": "Oublier de tester l'hypothèse de l'hérédité liée au sexe avant de conclure", "frequency": "common", "correct_approach": "Toujours tester X puis autosome et chercher la contradiction." }
+  ],
+  "source_document": { "file": "bac_2020_scexp_svt_principale.pdf", "pages": "3-4" },
+  "ocr_confidence": 0.88,
+  "current_curriculum_relevance": { "status": "relevant", "score": 0.95, "validated_by_teacher": false },
+  "usage_recommendation": ["use_for_current_mock_exam", "use_for_extra_practice", "use_for_concept_training"]
+}

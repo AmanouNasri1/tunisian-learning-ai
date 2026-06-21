@@ -1,0 +1,71 @@
+{
+  "id": "bac-math-2017-principale-ex3",
+  "schema_version": "1.0",
+  "year": 2017,
+  "session": "principale",
+  "section": { "code": "MATH", "name_fr": "Mathématiques" },
+  "subject": { "code": "MATH", "name_fr": "Mathématiques" },
+  "curriculum_era": { "code": "ERA_2016_2025", "relevance_weight": 1.0 },
+  "chapter": { "code": "FONCTIONS", "name_fr": "Étude de fonctions" },
+  "concepts": ["etude_fonction", "derivee", "limites", "variations"],
+  "exercise_text": "Soit f la fonction définie sur l'intervalle ]0, +∞[ par f(x) = x - ln(x). On note (C) sa courbe représentative dans un repère orthonormé.",
+  "difficulty": "medium",
+  "estimated_minutes": 25,
+  "questions": [
+    {
+      "number": "1",
+      "text": "Calculer la dérivée f'(x) et étudier son signe sur ]0, +∞[.",
+      "points": 2.0,
+      "concepts": ["derivee", "variations"]
+    },
+    {
+      "number": "2",
+      "text": "Dresser le tableau de variations de la fonction f.",
+      "points": 1.5,
+      "concepts": ["variations", "etude_fonction"]
+    },
+    {
+      "number": "3",
+      "text": "Déterminer les limites de f en 0 et en +∞.",
+      "points": 1.5,
+      "concepts": ["limites"]
+    }
+  ],
+  "correction": {
+    "is_official": true,
+    "author_type": "official",
+    "reliability": "high",
+    "items": [
+      {
+        "question": "1",
+        "text": "f'(x) = 1 - 1/x = (x - 1)/x. Sur ]0, +∞[, x > 0 donc le signe de f'(x) est celui de (x - 1) : f'(x) < 0 sur ]0, 1[ et f'(x) > 0 sur ]1, +∞[.",
+        "steps": ["Dériver f", "Mettre f'(x) sous forme (x-1)/x", "Étudier le signe selon x-1"]
+      },
+      {
+        "question": "2",
+        "text": "f est décroissante sur ]0, 1[, croissante sur ]1, +∞[, avec un minimum en x = 1 où f(1) = 1.",
+        "steps": ["Utiliser le signe de f'", "Identifier le minimum en x=1", "Construire le tableau de variations"]
+      },
+      {
+        "question": "3",
+        "text": "En +∞ : f(x) = x - ln(x) → +∞ (croissance comparée). En 0+ : ln(x) → -∞ donc -ln(x) → +∞ et f(x) → +∞.",
+        "steps": ["Limite en +∞ par croissance comparée", "Limite en 0+ via ln(x) → -∞"]
+      }
+    ]
+  },
+  "rubric": [
+    { "question": "1", "description": "Dérivée correcte f'(x)=1-1/x", "points": 1.0, "keywords": ["1-1/x", "(x-1)/x"] },
+    { "question": "1", "description": "Étude du signe correcte", "points": 1.0, "keywords": ["signe", "x-1"] },
+    { "question": "2", "description": "Tableau de variations cohérent", "points": 1.5, "keywords": ["tableau", "minimum", "f(1)=1"] },
+    { "question": "3", "description": "Limite en +∞", "points": 0.75, "keywords": ["+∞", "croissance comparée"] },
+    { "question": "3", "description": "Limite en 0+", "points": 0.75, "keywords": ["0+", "ln(x)"] }
+  ],
+  "common_mistakes": [
+    { "description_fr": "Erreur de dérivée de ln(x) (oublier que (ln x)' = 1/x)", "frequency": "common", "correct_approach": "Mémoriser (ln x)' = 1/x ; donc f'(x) = 1 - 1/x." },
+    { "description_fr": "Confondre les limites en 0+ et en +∞", "frequency": "common", "correct_approach": "En 0+, ln(x) → -∞ donc f → +∞ ; en +∞, croissance comparée donne f → +∞." }
+  ],
+  "source_document": { "file": "bac_2017_math_principale.pdf", "pages": "3" },
+  "ocr_confidence": 0.94,
+  "current_curriculum_relevance": { "status": "relevant", "score": 0.96, "validated_by_teacher": false },
+  "usage_recommendation": ["use_for_current_mock_exam", "use_for_extra_practice", "use_for_concept_training"]
+}

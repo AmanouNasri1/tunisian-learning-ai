@@ -1,0 +1,71 @@
+{
+  "id": "bac-scexp-2018-controle-physique-ex1",
+  "schema_version": "1.0",
+  "year": 2018,
+  "session": "controle",
+  "section": { "code": "SC_EXP", "name_fr": "Sciences expérimentales" },
+  "subject": { "code": "PHYSIQUE", "name_fr": "Sciences physiques" },
+  "curriculum_era": { "code": "ERA_2016_2025", "relevance_weight": 1.0 },
+  "chapter": { "code": "RLC", "name_fr": "Oscillations électriques (circuit RLC)" },
+  "concepts": ["oscillations_forcees", "resonance", "dephasage"],
+  "exercise_text": "On réalise un circuit RLC série alimenté par un générateur basse fréquence délivrant une tension sinusoïdale u(t) = U_m sin(2πN t). On dispose d'un oscilloscope permettant de visualiser la tension aux bornes du générateur et celle aux bornes du résistor.",
+  "difficulty": "hard",
+  "estimated_minutes": 35,
+  "questions": [
+    {
+      "number": "1",
+      "text": "À partir de l'oscillogramme, déterminer la fréquence N de la tension d'alimentation.",
+      "points": 1.0,
+      "concepts": ["oscillations_forcees"]
+    },
+    {
+      "number": "2",
+      "text": "Déterminer le déphasage entre l'intensité du courant et la tension d'alimentation. Le circuit est-il inductif ou capacitif ?",
+      "points": 2.0,
+      "concepts": ["dephasage"]
+    },
+    {
+      "number": "3",
+      "text": "On fait varier N. Déterminer la fréquence N0 pour laquelle le circuit entre en résonance d'intensité et justifier.",
+      "points": 1.5,
+      "concepts": ["resonance"]
+    }
+  ],
+  "correction": {
+    "is_official": false,
+    "author_type": "teacher",
+    "reliability": "medium",
+    "items": [
+      {
+        "question": "1",
+        "text": "On lit la période T sur l'oscillogramme (T = nombre de divisions × sensibilité horizontale). N = 1/T.",
+        "steps": ["Mesurer la période T sur l'axe horizontal", "Convertir avec la base de temps", "Calculer N = 1/T"]
+      },
+      {
+        "question": "2",
+        "text": "Le déphasage se lit comme le décalage horizontal Δt entre les deux courbes: φ = 2π Δt / T. Si u est en avance sur i, le circuit est inductif; sinon capacitif.",
+        "steps": ["Mesurer le décalage Δt entre u et i", "Calculer φ = 2πΔt/T", "Comparer les avances de phase pour conclure inductif/capacitif"]
+      },
+      {
+        "question": "3",
+        "text": "À la résonance d'intensité, i et u sont en phase (φ = 0) et l'intensité est maximale. N0 = 1 / (2π √(LC)).",
+        "steps": ["Énoncer la condition de résonance (φ = 0, I max)", "Donner N0 = 1/(2π√(LC))"]
+      }
+    ]
+  },
+  "rubric": [
+    { "question": "1", "description": "Lecture correcte de la période", "points": 0.5, "keywords": ["période", "divisions", "base de temps"] },
+    { "question": "1", "description": "Calcul N = 1/T", "points": 0.5, "keywords": ["N=1/T"] },
+    { "question": "2", "description": "Mesure du décalage et formule φ = 2πΔt/T", "points": 1.0, "keywords": ["déphasage", "Δt", "2π"] },
+    { "question": "2", "description": "Conclusion inductif/capacitif justifiée", "points": 1.0, "keywords": ["inductif", "capacitif", "avance"] },
+    { "question": "3", "description": "Condition de résonance + N0", "points": 1.5, "keywords": ["résonance", "en phase", "2π√(LC)"] }
+  ],
+  "common_mistakes": [
+    { "description_fr": "Confondre fréquence propre N0 et fréquence de résonance, ou se tromper sur la condition φ = 0", "frequency": "common", "correct_approach": "À la résonance d'intensité: i et u en phase, I maximale, N0 = 1/(2π√(LC))." },
+    { "description_fr": "Erreur de signe sur le déphasage (inverser inductif et capacitif)", "frequency": "common", "correct_approach": "Si la tension est en avance sur le courant => inductif." }
+  ],
+  "source_document": { "file": "bac_2018_scexp_physique_controle_correction_prof.pdf", "pages": "1-2" },
+  "ocr_confidence": 0.85,
+  "current_curriculum_relevance": { "status": "relevant", "score": 0.92, "validated_by_teacher": false },
+  "usage_recommendation": ["use_for_extra_practice", "use_for_concept_training"]
+}

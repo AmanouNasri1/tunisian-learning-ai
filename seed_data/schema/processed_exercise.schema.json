@@ -1,0 +1,154 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bacpilot.ai/schemas/processed_exercise-1.0.json",
+  "title": "ProcessedExercise",
+  "description": "Canonical format for one fully processed Bac exercise.",
+  "type": "object",
+  "required": [
+    "id", "schema_version", "year", "session", "section", "subject",
+    "curriculum_era", "exercise_text", "questions", "source_document",
+    "ocr_confidence", "current_curriculum_relevance", "usage_recommendation"
+  ],
+  "properties": {
+    "id": { "type": "string", "description": "stable slug, e.g. bac-math-2019-principale-ex2" },
+    "schema_version": { "type": "string", "const": "1.0" },
+    "year": { "type": "integer", "minimum": 1980, "maximum": 2100 },
+    "session": { "type": "string", "enum": ["principale", "controle"] },
+    "section": {
+      "type": "object",
+      "required": ["code"],
+      "properties": {
+        "code": { "type": "string" },
+        "name_fr": { "type": "string" }
+      }
+    },
+    "subject": {
+      "type": "object",
+      "required": ["code"],
+      "properties": {
+        "code": { "type": "string" },
+        "name_fr": { "type": "string" }
+      }
+    },
+    "curriculum_era": {
+      "type": "object",
+      "required": ["code", "relevance_weight"],
+      "properties": {
+        "code": { "type": "string" },
+        "relevance_weight": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "chapter": {
+      "type": "object",
+      "properties": {
+        "code": { "type": "string" },
+        "name_fr": { "type": "string" }
+      }
+    },
+    "concepts": { "type": "array", "items": { "type": "string" } },
+    "exercise_text": { "type": "string" },
+    "difficulty": { "type": "string", "enum": ["easy", "medium", "hard"] },
+    "estimated_minutes": { "type": "integer", "minimum": 1 },
+    "questions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["number", "text"],
+        "properties": {
+          "number": { "type": "string" },
+          "text": { "type": "string" },
+          "points": { "type": ["number", "null"] },
+          "concepts": { "type": "array", "items": { "type": "string" } },
+          "subquestions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["number", "text"],
+              "properties": {
+                "number": { "type": "string" },
+                "text": { "type": "string" },
+                "points": { "type": ["number", "null"] }
+              }
+            }
+          }
+        }
+      }
+    },
+    "correction": {
+      "type": "object",
+      "properties": {
+        "is_official": { "type": "boolean" },
+        "author_type": { "type": "string", "enum": ["official", "teacher", "ai_draft"] },
+        "reliability": { "type": "string", "enum": ["high", "medium", "low"] },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["question", "text"],
+            "properties": {
+              "question": { "type": "string" },
+              "text": { "type": "string" },
+              "steps": { "type": "array", "items": { "type": "string" } }
+            }
+          }
+        }
+      }
+    },
+    "rubric": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["question", "description", "points"],
+        "properties": {
+          "question": { "type": "string" },
+          "description": { "type": "string" },
+          "points": { "type": "number" },
+          "keywords": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "common_mistakes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["description_fr", "frequency"],
+        "properties": {
+          "description_fr": { "type": "string" },
+          "description_ar": { "type": "string" },
+          "frequency": { "type": "string", "enum": ["rare", "occasional", "common", "very_common"] },
+          "correct_approach": { "type": "string" }
+        }
+      }
+    },
+    "source_document": {
+      "type": "object",
+      "required": ["file"],
+      "properties": {
+        "file": { "type": "string" },
+        "pages": { "type": "string" }
+      }
+    },
+    "ocr_confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+    "current_curriculum_relevance": {
+      "type": "object",
+      "required": ["status", "score"],
+      "properties": {
+        "status": { "type": "string", "enum": ["relevant", "partially", "outdated", "unreviewed"] },
+        "score": { "type": "number", "minimum": 0, "maximum": 1 },
+        "validated_by_teacher": { "type": "boolean" }
+      }
+    },
+    "usage_recommendation": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "use_for_current_mock_exam",
+          "use_for_extra_practice",
+          "use_for_concept_training",
+          "avoid_for_readiness_prediction"
+        ]
+      }
+    }
+  }
+}
