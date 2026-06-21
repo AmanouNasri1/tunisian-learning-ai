@@ -1,0 +1,94 @@
+- id: loi_binomiale
+  query: "Explique la loi binomiale"
+  section: "SC_EXP"
+  subject: "MATH"
+  chapter: "PROBA"
+  expected_refused: false
+  expected_subject: "MATH"
+  expected_chapter: "PROBA"
+  required_terms: ["binomiale", "indépendants", "p", "n"]
+  forbidden_terms: ["pizza", "recette"]
+  required_citation_chapters: ["PROBA"]
+  minimum_citations: 2
+
+- id: probabilite_unaccented
+  query: "Explique la probabilite binomiale"
+  section: "SC_EXP"
+  subject: "MATH"
+  chapter: "PROBA"
+  expected_refused: false
+  expected_subject: "MATH"
+  expected_chapter: "PROBA"
+  required_terms: ["probabilite", "binomiale", "p"]
+  forbidden_terms: ["pizza", "recette"]
+  required_citation_chapters: ["PROBA"]
+  minimum_citations: 2
+
+- id: fonction_derivee
+  query: "Comment étudier une fonction avec la dérivée ?"
+  section: "MATH"
+  subject: "MATH"
+  chapter: "FONCTIONS"
+  expected_refused: false
+  expected_subject: "MATH"
+  expected_chapter: "FONCTIONS"
+  required_terms: ["derivee", "signe", "fonction"]
+  forbidden_terms: ["pizza", "recette"]
+  required_citation_chapters: ["FONCTIONS"]
+  minimum_citations: 2
+
+- id: circuit_rlc
+  query: "Explique le circuit RLC"
+  section: "SC_EXP"
+  subject: "PHYSIQUE"
+  chapter: "RLC"
+  expected_refused: false
+  expected_subject: "PHYSIQUE"
+  expected_chapter: "RLC"
+  required_terms: ["circuit", "rlc", "dephasage"]
+  forbidden_terms: ["pizza", "recette"]
+  required_citation_chapters: ["RLC"]
+  minimum_citations: 2
+
+- id: genetique_recessive
+  query: "Explique la génétique récessive"
+  section: "SC_EXP"
+  subject: "SVT"
+  chapter: "GENETIQUE"
+  expected_refused: false
+  expected_subject: "SVT"
+  expected_chapter: "GENETIQUE"
+  required_terms: ["recessif", "parents", "atteint"]
+  forbidden_terms: ["pizza", "recette"]
+  required_citation_chapters: ["GENETIQUE"]
+  minimum_citations: 2
+
+- id: pizza_out_of_scope
+  query: "Donne-moi une recette de pizza"
+  expected_refused: true
+  expected_subject:
+  expected_chapter:
+  required_terms: []
+  forbidden_terms: ["farine", "four", "fromage", "tomate"]
+  required_citation_chapters: []
+  minimum_citations: 0
+
+- id: ambiguous_math_question
+  query: "Explique cet exercice de maths"
+  expected_refused: true
+  expected_subject:
+  expected_chapter:
+  required_terms: []
+  forbidden_terms: ["binomiale", "derivee", "rlc", "genetique"]
+  required_citation_chapters: []
+  minimum_citations: 0
+
+- id: unsupported_topic
+  query: "Explique la photosynthèse"
+  expected_refused: true
+  expected_subject:
+  expected_chapter:
+  required_terms: []
+  forbidden_terms: ["chlorophylle", "dioxyde", "lumiere"]
+  required_citation_chapters: []
+  minimum_citations: 0

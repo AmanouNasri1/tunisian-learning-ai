@@ -282,3 +282,40 @@ keeps generic or out-of-scope requests from being answered by mock-vector noise.
 Add teacher-review/evaluation tooling for tutor answers: golden tutor cases, expected
 citations, refusal expectations, and a command that scores answer grounding before any real
 LLM provider is enabled for student-facing use.
+
+---
+
+# Tutor evaluation tooling
+
+Goal: add a deterministic evaluation layer that verifies mock tutor answers are grounded,
+cited, relevant, and correctly refuse unsupported questions before real LLM providers are
+enabled.
+
+## What changed
+
+- **Golden cases** (`evaluation/tutor_cases.yaml`): 8 initial tutor cases covering
+  binomial probability, unaccented probability, derivative/function study, RLC circuits,
+  recessive genetics, pizza out-of-scope, ambiguous math, and an unsupported topic.
+- **Evaluator service** (`evaluation/tutor_evaluator.py`): loads YAML, calls
+  `answer_student_question(..., provider="mock")`, and checks refusal correctness,
+  citation counts, citation chapters, required terms, forbidden terms, diagnostics, and
+  provider metadata.
+- **Scoring**: per-case hard pass/fail plus an overall score of passed cases / total cases.
+  No LLM judge is used.
+- **Command** (`evaluate_tutor`): supports `--cases`, `--json`, `--fail-under`, and
+  `--verbose`; exits nonzero when the score is below threshold.
+- **Tests**: YAML loading, pass/refusal cases, command pass/fail threshold behavior,
+  required/forbidden term failures, citation chapter failures, and mock-only/no-paid-client
+  behavior.
+
+## Current limitations
+
+The golden set is intentionally small and deterministic. It catches grounding regressions but
+does not replace teacher review, broader scenario coverage, or future real-LLM evals with
+held-out cases.
+
+## Exact next milestone
+
+Build the first teacher-facing review/export backend workflow for tutor evals: store or export
+evaluation runs, let a teacher mark expected citations/terms, and grow the golden set before
+enabling any real provider in a student-facing path.

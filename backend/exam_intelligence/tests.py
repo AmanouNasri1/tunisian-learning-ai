@@ -16,6 +16,8 @@ actually touched — it only needs to select the sqlite backend.
 import io
 import json
 import os
+import tempfile
+from pathlib import Path
 
 from django.core.management import call_command
 from django.db import connection
@@ -36,6 +38,12 @@ _NULL = io.StringIO  # quiet command output
 
 def _load(cmd, *args):
     call_command(cmd, *args, stdout=_NULL(), stderr=_NULL())
+
+
+def _write_tutor_cases(tmpdir: str, text: str) -> str:
+    path = Path(tmpdir) / "cases.yaml"
+    path.write_text(text, encoding="utf-8")
+    return str(path)
 
 
 class BackendVerificationTests(TestCase):
@@ -308,6 +316,164 @@ class BackendVerificationTests(TestCase):
                        side_effect=AssertionError("Anthropic should not be used")):
                 package = answer_student_question("Explique le circuit RLC", provider="mock")
         self.assertFalse(package["refused"])
+
+    def test_tutor_case_loader_reads_yaml_cases(self):
+        from evaluation.tutor_evaluator import load_tutor_cases
+
+        cases = load_tutor_cases("evaluation/tutor_cases.yaml")
+        self.assertGreaterEqual(len(cases), 8)
+        ids = {case.id for case in cases}
+        self.assertIn("loi_binomiale", ids)
+        self.assertIn("pizza_out_of_scope", ids)
+
+    def test_tutor_evaluator_runs_pass_and_refusal_cases(self):
+        from evaluation.tutor_evaluator import TutorCase, evaluate_case
+
+        _load("prepare_embedding_chunks", "--mock")
+        pass_case = TutorCase(
+            id="test_binomiale",
+            query="Explique la loi binomiale",
+            section="SC_EXP",
+            subject="MATH",
+            chapter="PROBA",
+            expected_refused=False,
+            expected_subject="MATH",
+            expected_chapter="PROBA",
+            required_terms=("binomiale",),
+            forbidden_terms=("pizza",),
+            required_citation_chapters=("PROBA",),
+            minimum_citations=1,
+        )
+        refusal_case = TutorCase(
+            id="test_pizza",
+            query="Donne-moi une recette de pizza",
+            expected_refused=True,
+            forbidden_terms=("fromage", "tomate"),
+        )
+        self.assertTrue(evaluate_case(pass_case)["passed"])
+        refused = evaluate_case(refusal_case)
+        self.assertTrue(refused["passed"])
+        self.assertTrue(refused["actual_refused"])
+        self.assertEqual(refused["citation_count"], 0)
+
+    def test_evaluate_tutor_command_succeeds_with_normal_threshold(self):
+        _load("prepare_embedding_chunks", "--mock")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = _write_tutor_cases(tmpdir, """
+- id: pass_case
+  query: "Explique la loi binomiale"
+  section: "SC_EXP"
+  subject: "MATH"
+  chapter: "PROBA"
+  expected_refused: false
+  expected_subject: "MATH"
+  expected_chapter: "PROBA"
+  required_terms: ["binomiale"]
+  forbidden_terms: ["pizza"]
+  required_citation_chapters: ["PROBA"]
+  minimum_citations: 1
+- id: refusal_case
+  query: "Donne-moi une recette de pizza"
+  expected_refused: true
+  required_terms: []
+  forbidden_terms: ["fromage"]
+  required_citation_chapters: []
+  minimum_citations: 0
+""")
+            out = io.StringIO()
+            call_command("evaluate_tutor", "--cases", path, "--fail-under", "0.8",
+                         stdout=out, stderr=_NULL())
+        self.assertIn("RESULT: PASS", out.getvalue())
+
+    def test_evaluate_tutor_command_fails_with_strict_threshold(self):
+        _load("prepare_embedding_chunks", "--mock")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = _write_tutor_cases(tmpdir, """
+- id: forced_failure
+  query: "Explique la loi binomiale"
+  section: "SC_EXP"
+  subject: "MATH"
+  chapter: "PROBA"
+  expected_refused: false
+  expected_subject: "MATH"
+  expected_chapter: "PROBA"
+  required_terms: ["term_that_will_not_appear"]
+  forbidden_terms: []
+  required_citation_chapters: ["PROBA"]
+  minimum_citations: 1
+""")
+            with self.assertRaises(SystemExit):
+                call_command("evaluate_tutor", "--cases", path, "--fail-under", "1.0",
+                             stdout=_NULL(), stderr=_NULL())
+
+    def test_evaluator_required_forbidden_and_citation_checks_report_failures(self):
+        from evaluation.tutor_evaluator import TutorCase, evaluate_case
+
+        _load("prepare_embedding_chunks", "--mock")
+        required = evaluate_case(TutorCase(
+            id="missing_required",
+            query="Explique la loi binomiale",
+            section="SC_EXP",
+            subject="MATH",
+            chapter="PROBA",
+            expected_refused=False,
+            required_terms=("impossible_required_term",),
+            minimum_citations=1,
+        ))
+        self.assertFalse(required["passed"])
+        self.assertIn("impossible_required_term", required["required_terms_missing"])
+
+        forbidden = evaluate_case(TutorCase(
+            id="forbidden_found",
+            query="Explique la loi binomiale",
+            section="SC_EXP",
+            subject="MATH",
+            chapter="PROBA",
+            expected_refused=False,
+            forbidden_terms=("binomiale",),
+            minimum_citations=1,
+        ))
+        self.assertFalse(forbidden["passed"])
+        self.assertIn("binomiale", forbidden["forbidden_terms_found"])
+
+        chapter = evaluate_case(TutorCase(
+            id="wrong_chapter",
+            query="Explique la loi binomiale",
+            section="SC_EXP",
+            subject="MATH",
+            chapter="PROBA",
+            expected_refused=False,
+            required_citation_chapters=("RLC",),
+            minimum_citations=1,
+        ))
+        self.assertFalse(chapter["passed"])
+        self.assertTrue(any("required citation chapters" in f for f in chapter["failures"]))
+
+    def test_tutor_evaluator_uses_mock_provider_only(self):
+        from evaluation.tutor_evaluator import evaluate_tutor_cases
+
+        _load("prepare_embedding_chunks", "--mock")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = _write_tutor_cases(tmpdir, """
+- id: pass_case
+  query: "Explique le circuit RLC"
+  section: "SC_EXP"
+  subject: "PHYSIQUE"
+  chapter: "RLC"
+  expected_refused: false
+  expected_subject: "PHYSIQUE"
+  expected_chapter: "RLC"
+  required_terms: ["rlc"]
+  forbidden_terms: ["pizza"]
+  required_citation_chapters: ["RLC"]
+  minimum_citations: 1
+""")
+            with patch("ai.llm_client.OpenAIClient",
+                       side_effect=AssertionError("OpenAI should not be used")):
+                with patch("ai.llm_client.AnthropicClient",
+                           side_effect=AssertionError("Anthropic should not be used")):
+                    summary = evaluate_tutor_cases(path)
+        self.assertEqual(summary["passed"], 1)
 
     def test_api_endpoints_return_200(self):
         for url in ["/api/sections/", "/api/subjects/", "/api/chapters/",

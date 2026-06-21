@@ -120,6 +120,7 @@ $env:DATABASE_URL='sqlite:///dev.sqlite3'; python manage.py smoke_test_exam_inte
 | `smoke_test_rag_context` | Builds structured RAG context packages for representative queries. No LLM calls and no paid APIs. |
 | `ask_tutor "<question>" [--provider mock\|openai\|anthropic] [--section CODE] [--subject CODE] [--chapter CODE] [--top-k N] [--json]` | Ask the source-grounded tutor. Default provider is safe deterministic `mock`; real providers require explicit selection and API keys. |
 | `smoke_test_tutor` | Exercises grounded mock tutor answers and an out-of-scope refusal. No paid APIs. |
+| `evaluate_tutor [--cases evaluation/tutor_cases.yaml] [--json] [--fail-under 0.8] [--verbose]` | Runs deterministic golden tutor cases with the mock provider. No LLM judge and no paid APIs. |
 
 ### Embedding workflow
 
@@ -187,6 +188,40 @@ python manage.py ask_tutor "Explique la loi binomiale" --provider openai --secti
 Mock embeddings and the mock tutor are not production semantic AI; they are deterministic
 local safety paths for testing retrieval, grounding, citations, and audit logging.
 
+### Tutor evaluation
+
+Golden tutor cases live in `evaluation/tutor_cases.yaml`. They check whether mock tutor
+answers/refusals are grounded before any real LLM provider is enabled.
+
+Run:
+
+```powershell
+python manage.py evaluate_tutor --verbose
+python manage.py evaluate_tutor --json
+python manage.py evaluate_tutor --verbose --fail-under 0.8
+```
+
+Add a case by appending YAML like:
+
+```yaml
+- id: new_case_id
+  query: "Explique ..."
+  section: "SC_EXP"
+  subject: "MATH"
+  chapter: "PROBA"
+  expected_refused: false
+  expected_subject: "MATH"
+  expected_chapter: "PROBA"
+  required_terms: ["terme"]
+  forbidden_terms: ["pizza"]
+  required_citation_chapters: ["PROBA"]
+  minimum_citations: 2
+```
+
+The evaluator checks refusal correctness, citations, citation chapters, required/forbidden
+terms, diagnostics, provider metadata, and that only `provider=mock` is used. It is not an
+LLM judge; it is a deterministic safety gate.
+
 ## Testing & verification
 
 > **SQLite is for code sanity only. PostgreSQL + pgvector is the real acceptance gate.**
@@ -208,6 +243,7 @@ python manage.py smoke_test_api
 python manage.py smoke_test_retrieval
 python manage.py smoke_test_rag_context
 python manage.py smoke_test_tutor
+python manage.py evaluate_tutor --verbose
 python manage.py test backend.exam_intelligence
 ```
 
@@ -224,6 +260,7 @@ python manage.py smoke_test_api
 python manage.py smoke_test_retrieval
 python manage.py smoke_test_rag_context
 python manage.py smoke_test_tutor
+python manage.py evaluate_tutor --verbose
 python manage.py test backend.exam_intelligence
 ```
 
@@ -275,6 +312,9 @@ python manage.py smoke_test_exam_intelligence   # pgvector check should PASS her
 - **RAG context assembly and tutor answering are implemented** (`rag/context_builder.py`,
   `rag/tutor.py`). The tutor is source-grounded, writes `AIInteraction` audit rows, and
   defaults to deterministic mock output. Real LLM calls require explicit provider selection.
+- **Tutor evaluation is deterministic, not a teacher replacement.** `evaluate_tutor` checks
+  grounding, citations, refusal behavior, and required/forbidden terms; a teacher-authored
+  larger golden set is still needed before production use.
 - **OCR** for scanned PDFs is stubbed; digital-PDF extraction works.
 - **No correction engine or production tutor UI yet** - only read-only reference browsing,
   retrieval-context preview, and a backend tutor answer endpoint.
