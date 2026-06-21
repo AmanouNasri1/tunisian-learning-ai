@@ -377,7 +377,77 @@ python manage.py smoke_test_exam_intelligence   # pgvector check should PASS her
 | `rag/` | Hybrid retrieval, RAG context assembly, and source-grounded tutor service |
 | `evaluation/` | Golden-set format + metrics (cases authored, runner TBD) |
 | `seed_data/` | JSON schema, worked examples, reference fixture |
+| `frontend/` | React + TypeScript + Vite Tutor MVP (mock provider only) |
 | `docs/` | Architecture, data model, sprint report |
+
+## Frontend (Tutor MVP)
+
+A minimal student-facing UI (React + TypeScript + Vite) over the existing tutor API. It asks
+a Bac question with section/subject/chapter filters and shows the **answer, citations, refusal
+state, warnings, and a diagnostics panel**. It always sends `provider: "mock"` — no real
+(paid) LLM provider is selectable from the UI.
+
+### Run it (two terminals)
+
+Terminal 1 — backend (Django):
+
+```powershell
+cd "C:\Users\amanu\Desktop\projects\tunisian-learning-ai"
+.\.venv\Scripts\Activate.ps1
+python manage.py runserver 127.0.0.1:8000
+```
+
+Terminal 2 — frontend (Vite):
+
+```powershell
+cd "C:\Users\amanu\Desktop\projects\tunisian-learning-ai\frontend"
+npm install
+npm run dev
+```
+
+Open: http://127.0.0.1:5173
+
+### How it talks to Django
+
+Vite proxies `/api` → `http://127.0.0.1:8000` (see `frontend/vite.config.ts`), so the browser
+makes same-origin calls and there is **no CORS setup**. Frontend code uses relative URLs only
+(`/api/tutor/ask/`); no production URL is hardcoded. For a production build the API must be
+served under the same origin (or a proxy added).
+
+### Mock-only by default
+
+The UI hardcodes `provider: "mock"`. OpenAI/Anthropic are **not** exposed in the frontend and
+cannot be triggered from it. Real providers stay gated in the backend.
+
+### Filters (Automatique by default)
+
+Section / Matière / Chapitre each default to **Automatique**. An "Automatique" field is
+**omitted entirely** from the request (no empty/`null` value is sent), so a fresh form never
+sends filters that contradict the question. Quick-prompt buttons set the question **and** the
+matching filters together (e.g. *Explique le circuit RLC* → `SC_EXP / PHYSIQUE / RLC`; the
+pizza prompt resets all three to Automatique). The result panel shows **`Filtres utilisés : …`**
+so you can see exactly what was sent (`Automatique` when none).
+
+### Manual checks
+
+- **Auto + answer**: leave all filters on Automatique, ask `Explique le circuit RLC` →
+  `refused = false`, answer + citations appear, `Filtres utilisés : Automatique`, chapter `RLC`
+  visible in citations.
+- **Quick prompt sets filters**: click `Explique le circuit RLC` → filters become
+  `SC_EXP / PHYSIQUE / RLC`, answer + citations appear.
+- **Quick prompt (SVT)**: click `Explique la génétique récessive` → filters become
+  `SC_EXP / SVT / GENETIQUE`, answer + citations appear.
+- **Refusal**: click `Donne-moi une recette de pizza` → filters become Automatique, red
+  refusal banner, `refused = true`, refusal reason shown, **no citations**.
+- **Backend down**: stop Django and submit → clear error: *"Backend indisponible. Démarrez
+  Django : python manage.py runserver 127.0.0.1:8000"*.
+
+### Build
+
+```powershell
+cd frontend
+npm run build      # tsc typecheck + vite production build into frontend/dist/
+```
 
 ## Known limitations / not done yet
 

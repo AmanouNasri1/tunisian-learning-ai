@@ -19,3 +19,8 @@ media/
 .vscode/
 
 .uv-cache/
+
+# Frontend (Node/Vite)
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
