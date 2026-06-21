@@ -84,6 +84,7 @@ Then open:
 - Admin: http://127.0.0.1:8000/admin/
 - Read-only API: http://127.0.0.1:8000/api/ (sections, subjects, chapters, concepts, exams, exercises)
 - RAG context API: http://127.0.0.1:8000/api/rag/context/?q=fonction
+- Tutor API: POST http://127.0.0.1:8000/api/tutor/ask/
 
 ### Quick schema check without PostgreSQL (optional)
 
@@ -117,6 +118,8 @@ $env:DATABASE_URL='sqlite:///dev.sqlite3'; python manage.py smoke_test_exam_inte
 | `smoke_test_api` | Hits the read-only API via the in-process test client; checks status + shape. |
 | `smoke_test_retrieval` | Real pgvector **hybrid** search (vector + keyword) when PostgreSQL + pgvector + ready embeddings are present; otherwise keyword fallback. Prints accurate diagnostics + the precise fallback reason. No paid APIs (query uses the deterministic mock embedder to match `--mock` chunks). |
 | `smoke_test_rag_context` | Builds structured RAG context packages for representative queries. No LLM calls and no paid APIs. |
+| `ask_tutor "<question>" [--provider mock\|openai\|anthropic] [--section CODE] [--subject CODE] [--chapter CODE] [--top-k N] [--json]` | Ask the source-grounded tutor. Default provider is safe deterministic `mock`; real providers require explicit selection and API keys. |
+| `smoke_test_tutor` | Exercises grounded mock tutor answers and an out-of-scope refusal. No paid APIs. |
 
 ### Embedding workflow
 
@@ -147,6 +150,43 @@ If `OPENAI_API_KEY` is missing, `embed_chunks --provider openai` prints a clear 
 
 It does not call an LLM. It also does not call OpenAI embeddings implicitly; vector retrieval is used only for the deterministic mock-vector smoke path unless an explicit caller injects a real query embedder in the future.
 
+### Source-grounded tutor
+
+The first tutor layer lives in `rag/tutor.py`. It consumes `rag/context_builder.py`, checks
+whether retrieved context is answerable, returns citations, and writes an `AIInteraction`
+audit row for both answers and refusals.
+
+Safe mock command:
+
+```powershell
+python manage.py ask_tutor "Explique la loi binomiale" --provider mock
+python manage.py ask_tutor "Donne-moi une recette de pizza" --provider mock
+python manage.py smoke_test_tutor
+```
+
+API example:
+
+```powershell
+Invoke-RestMethod -Method Post "http://127.0.0.1:8000/api/tutor/ask/" `
+  -ContentType "application/json" `
+  -Body '{"query":"Explique la loi binomiale","provider":"mock","section":"SC_EXP","subject":"MATH","chapter":"PROBA"}'
+```
+
+Refusal behavior: the tutor refuses when no chunks/citations are retrieved, when keyword
+evidence is absent, or when the meaningful words in the student question are not grounded in
+the selected context. The refusal is structured and logged instead of hallucinating.
+
+Real LLM providers are explicit only:
+
+```powershell
+$env:OPENAI_API_KEY='sk-...'
+$env:LLM_MODEL='gpt-4o'
+python manage.py ask_tutor "Explique la loi binomiale" --provider openai --section SC_EXP --subject MATH --chapter PROBA
+```
+
+Mock embeddings and the mock tutor are not production semantic AI; they are deterministic
+local safety paths for testing retrieval, grounding, citations, and audit logging.
+
 ## Testing & verification
 
 > **SQLite is for code sanity only. PostgreSQL + pgvector is the real acceptance gate.**
@@ -167,6 +207,7 @@ python manage.py smoke_test_exam_intelligence
 python manage.py smoke_test_api
 python manage.py smoke_test_retrieval
 python manage.py smoke_test_rag_context
+python manage.py smoke_test_tutor
 python manage.py test backend.exam_intelligence
 ```
 
@@ -182,6 +223,7 @@ python manage.py smoke_test_exam_intelligence
 python manage.py smoke_test_api
 python manage.py smoke_test_retrieval
 python manage.py smoke_test_rag_context
+python manage.py smoke_test_tutor
 python manage.py test backend.exam_intelligence
 ```
 
@@ -214,7 +256,7 @@ python manage.py smoke_test_exam_intelligence   # pgvector check should PASS her
 | `backend/exam_intelligence/` | Core app: models, admin, API, services, management commands |
 | `ingestion/` | PDF → structured JSON pipeline (digital works; OCR stubbed) |
 | `ai/` | LLM + embedding abstractions, prompt templates |
-| `rag/` | Hybrid retrieval plus RAG context assembly |
+| `rag/` | Hybrid retrieval, RAG context assembly, and source-grounded tutor service |
 | `evaluation/` | Golden-set format + metrics (cases authored, runner TBD) |
 | `seed_data/` | JSON schema, worked examples, reference fixture |
 | `docs/` | Architecture, data model, sprint report |
@@ -230,12 +272,12 @@ python manage.py smoke_test_exam_intelligence   # pgvector check should PASS her
 - **RAG retrieval backends are implemented** (`rag/retriever.py`): pgvector cosine vector
   search + portable keyword search, fused with RRF. Vector search runs only on PostgreSQL +
   pgvector with `ready` embeddings; reranker is still optional/none.
-- **RAG context assembly is implemented** (`rag/context_builder.py`) and exposed at
-  `/api/rag/context/?q=fonction`. It packages citations and grouped context only; no LLM
-  calls happen.
+- **RAG context assembly and tutor answering are implemented** (`rag/context_builder.py`,
+  `rag/tutor.py`). The tutor is source-grounded, writes `AIInteraction` audit rows, and
+  defaults to deterministic mock output. Real LLM calls require explicit provider selection.
 - **OCR** for scanned PDFs is stubbed; digital-PDF extraction works.
-- **No correction/tutor generation HTTP endpoints yet** - only read-only reference browsing
-  and a retrieval-context preview endpoint.
+- **No correction engine or production tutor UI yet** - only read-only reference browsing,
+  retrieval-context preview, and a backend tutor answer endpoint.
 - **Coefficients and curriculum-era boundaries are placeholders** — verify with a Tunisian
   Bac teacher before trusting any readiness score.
 - `migrate` against **real PostgreSQL + pgvector** has not been run yet (no Postgres in the

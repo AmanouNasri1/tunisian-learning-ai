@@ -496,6 +496,7 @@ class AIInteraction(models.Model):
         ("full_correction", "Correction complète"), ("bac_style_answer", "Réponse type Bac"),
         ("identify_mistakes", "Repérage d'erreurs"), ("generate_similar", "Exercice similaire"),
         ("revision_summary", "Fiche de révision"), ("explain_points_lost", "Points perdus"),
+        ("tutor_answer", "Réponse tuteur"),
     ]
 
     student = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
@@ -507,7 +508,12 @@ class AIInteraction(models.Model):
     response = models.TextField()
     citations = models.JSONField(default=list, blank=True)
     used_sources = models.BooleanField(default=False)
+    provider = models.CharField(max_length=32, blank=True)
     model_name = models.CharField(max_length=64, blank=True)
+    retrieval_mode = models.CharField(max_length=48, blank=True)
+    refused = models.BooleanField(default=False)
+    refusal_reason = models.TextField(blank=True)
+    warnings = models.JSONField(default=list, blank=True)
     tokens = models.PositiveIntegerField(null=True, blank=True)
     confidence = models.DecimalField(max_digits=4, decimal_places=3, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)

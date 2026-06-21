@@ -193,9 +193,9 @@ class StudentAttemptAdmin(admin.ModelAdmin):
 
 @admin.register(AIInteraction)
 class AIInteractionAdmin(admin.ModelAdmin):
-    list_display = ("mode", "language", "student", "used_sources", "model_name",
-                    "confidence", "created_at")
-    list_filter = ("mode", "language", "used_sources", "model_name")
+    list_display = ("mode", "language", "student", "provider", "used_sources",
+                    "refused", "model_name", "confidence", "created_at")
+    list_filter = ("mode", "language", "provider", "used_sources", "refused", "model_name")
     search_fields = ("query", "response")
     readonly_fields = ("created_at",)
     date_hierarchy = "created_at"

@@ -245,3 +245,40 @@ Add the first tutor-generation backend path: an explicit, source-grounded AI tut
 that consumes `rag/context_builder.py`, calls an LLM only behind an explicit provider flag,
 writes `AIInteraction` audit rows, and refuses to answer when retrieval is weak or required
 corrections/rubrics are missing.
+
+---
+
+# Source-grounded AI tutor backend
+
+Goal: add the first backend-only tutor answer layer that consumes RAG context, answers with
+citations, refuses unsafe/out-of-scope questions, and stores an audit trail.
+
+## What changed
+
+- **Tutor service** (`rag/tutor.py`): `answer_student_question(...)` builds RAG context,
+  checks answerability, returns a structured answer package, and logs `AIInteraction`.
+- **Mock tutor provider**: deterministic local answers assembled from corrections, rubric
+  items, questions, common mistakes, and citations. No API calls.
+- **Real provider readiness** (`ai/llm_client.py`): added `MockLLMClient`,
+  `LLMConfigurationError`, explicit provider selection, and clean missing-key errors for
+  OpenAI/Anthropic.
+- **Audit migration** (`0003_aiinteraction_tutor_audit.py`): added provider,
+  retrieval_mode, refused, refusal_reason, and warnings fields to `AIInteraction`.
+- **Commands**: `ask_tutor` for manual asks, `smoke_test_tutor` for in-scope answers plus
+  an out-of-scope pizza refusal.
+- **API**: `POST /api/tutor/ask/` returns the same structured package; default provider is
+  `mock`, real providers require explicit selection and configured keys.
+- **Tests**: mock grounded answer, citations, refusal, API success/missing-query/missing-key,
+  no paid-client instantiation in mock tests, and audit row creation.
+
+## Refusal policy
+
+The tutor refuses when there are no chunks, no citations, no keyword evidence, or no
+meaningful lexical overlap between the student's query and retrieved chunk content. This
+keeps generic or out-of-scope requests from being answered by mock-vector noise.
+
+## Exact next milestone
+
+Add teacher-review/evaluation tooling for tutor answers: golden tutor cases, expected
+citations, refusal expectations, and a command that scores answer grounding before any real
+LLM provider is enabled for student-facing use.

@@ -28,16 +28,46 @@ class LLMResponse:
 class LLMClient(Protocol):
     """Minimal contract every provider must satisfy."""
 
+    provider_name: str
+    model: str
+
     def complete(self, system: str, messages: list[LLMMessage],
                  temperature: float = 0.2, max_tokens: int = 2000) -> LLMResponse:
         ...
 
 
+class LLMConfigurationError(RuntimeError):
+    """Raised when a selected LLM provider is not configured."""
+
+
+class MockLLMClient:
+    provider_name = "mock"
+    model = "mock-tutor-v1"
+
+    def complete(self, system, messages, temperature=0.2, max_tokens=2000):
+        user = messages[-1].content if messages else ""
+        return LLMResponse(
+            text=(
+                "Réponse mock générée uniquement à partir du contexte récupéré.\n\n"
+                f"{user[:1200]}"
+            ),
+            model=self.model,
+            input_tokens=0,
+            output_tokens=0,
+            raw={"provider": self.provider_name},
+        )
+
+
 class AnthropicClient:
     def __init__(self, model: str | None = None, api_key: str | None = None):
-        import anthropic  # imported lazily so the package is optional
+        self.provider_name = "anthropic"
         self.model = model or os.environ.get("LLM_MODEL", "claude-opus-4-8")
-        self._client = anthropic.Anthropic(api_key=api_key or os.environ["ANTHROPIC_API_KEY"])
+        key = api_key if api_key is not None else os.environ.get("ANTHROPIC_API_KEY", "")
+        if not key.strip():
+            raise LLMConfigurationError(
+                "ANTHROPIC_API_KEY is missing. Set it before running Anthropic tutor calls.")
+        import anthropic  # imported lazily so the package is optional
+        self._client = anthropic.Anthropic(api_key=key)
 
     def complete(self, system, messages, temperature=0.2, max_tokens=2000):
         resp = self._client.messages.create(
@@ -58,9 +88,14 @@ class AnthropicClient:
 
 class OpenAIClient:
     def __init__(self, model: str | None = None, api_key: str | None = None):
-        from openai import OpenAI
+        self.provider_name = "openai"
         self.model = model or os.environ.get("LLM_MODEL", "gpt-4o")
-        self._client = OpenAI(api_key=api_key or os.environ["OPENAI_API_KEY"])
+        key = api_key if api_key is not None else os.environ.get("OPENAI_API_KEY", "")
+        if not key.strip():
+            raise LLMConfigurationError(
+                "OPENAI_API_KEY is missing. Set it before running OpenAI tutor calls.")
+        from openai import OpenAI
+        self._client = OpenAI(api_key=key)
 
     def complete(self, system, messages, temperature=0.2, max_tokens=2000):
         full = [{"role": "system", "content": system}] + \
@@ -79,8 +114,10 @@ class OpenAIClient:
         )
 
 
-def get_llm_client() -> LLMClient:
-    provider = os.environ.get("LLM_PROVIDER", "anthropic").lower()
+def get_llm_client(provider: str | None = None) -> LLMClient:
+    provider = (provider or os.environ.get("LLM_PROVIDER", "mock")).lower()
+    if provider == "mock":
+        return MockLLMClient()
     if provider == "anthropic":
         return AnthropicClient()
     if provider == "openai":

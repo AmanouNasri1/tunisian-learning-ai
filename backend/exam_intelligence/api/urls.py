@@ -5,7 +5,7 @@ from rest_framework.routers import DefaultRouter
 
 from .views import (
     BacSectionViewSet, ChapterViewSet, ConceptViewSet, ExamViewSet,
-    ExamExerciseViewSet, RAGContextView, SubjectViewSet,
+    ExamExerciseViewSet, RAGContextView, SubjectViewSet, TutorAskView,
 )
 
 router = DefaultRouter()
@@ -18,4 +18,5 @@ router.register(r"exercises", ExamExerciseViewSet, basename="exercise")
 
 urlpatterns = [
     path("rag/context/", RAGContextView.as_view(), name="rag-context"),
+    path("tutor/ask/", TutorAskView.as_view(), name="tutor-ask"),
 ] + router.urls

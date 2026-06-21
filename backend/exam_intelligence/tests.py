@@ -14,6 +14,7 @@ actually touched — it only needs to select the sqlite backend.
 """
 
 import io
+import json
 import os
 
 from django.core.management import call_command
@@ -23,8 +24,8 @@ from unittest import skipUnless
 from unittest.mock import patch
 
 from backend.exam_intelligence.models import (
-    BacSection, CurriculumEra, EmbeddingChunk, EmbeddingStatus, ExamExercise,
-    RubricItem, Subject,
+    AIInteraction, BacSection, CurriculumEra, EmbeddingChunk, EmbeddingStatus,
+    ExamExercise, RubricItem, Subject,
 )
 from backend.exam_intelligence.services.readiness import (
     ReadinessComponents, overall_readiness, subject_readiness,
@@ -219,6 +220,94 @@ class BackendVerificationTests(TestCase):
                 0,
                 msg=f"{query!r} returned no keyword candidates",
             )
+
+    def test_mock_tutor_answer_returns_grounded_answer_and_audit_row(self):
+        from rag.tutor import answer_student_question
+
+        _load("prepare_embedding_chunks", "--mock")
+        before = AIInteraction.objects.count()
+        package = answer_student_question(
+            "Explique la loi binomiale",
+            section="SC_EXP",
+            subject="MATH",
+            chapter="PROBA",
+            provider="mock",
+        )
+        self.assertFalse(package["refused"])
+        self.assertIn("Réponse mock", package["answer"])
+        self.assertTrue(package["citations"])
+        self.assertTrue(package["used_chunks"])
+        self.assertEqual(package["provider"], "mock")
+        self.assertEqual(AIInteraction.objects.count(), before + 1)
+
+        interaction = AIInteraction.objects.get(pk=package["interaction_id"])
+        self.assertEqual(interaction.provider, "mock")
+        self.assertEqual(interaction.mode, "tutor_answer")
+        self.assertFalse(interaction.refused)
+        self.assertTrue(interaction.citations)
+        self.assertTrue(interaction.retrieved_chunk_ids)
+
+    def test_mock_tutor_out_of_scope_question_refuses_and_logs(self):
+        from rag.tutor import answer_student_question
+
+        _load("prepare_embedding_chunks", "--mock")
+        package = answer_student_question("Donne-moi une recette de pizza", provider="mock")
+        self.assertTrue(package["refused"])
+        self.assertIn("documents actuellement retrouvés", package["answer"])
+        self.assertTrue(package["refusal_reason"])
+        interaction = AIInteraction.objects.get(pk=package["interaction_id"])
+        self.assertTrue(interaction.refused)
+        self.assertEqual(interaction.refusal_reason, package["refusal_reason"])
+
+    def test_tutor_api_mock_provider_returns_200(self):
+        _load("prepare_embedding_chunks", "--mock")
+        resp = self.client.post(
+            "/api/tutor/ask/",
+            data=json.dumps({
+                "query": "Explique la loi binomiale",
+                "provider": "mock",
+                "section": "SC_EXP",
+                "subject": "MATH",
+                "chapter": "PROBA",
+            }),
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertFalse(data["refused"])
+        self.assertTrue(data["citations"])
+        self.assertTrue(AIInteraction.objects.filter(pk=data["interaction_id"]).exists())
+
+    def test_tutor_api_missing_query_returns_400(self):
+        resp = self.client.post(
+            "/api/tutor/ask/",
+            data=json.dumps({"provider": "mock"}),
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("query", resp.json()["detail"])
+
+    def test_tutor_api_missing_real_provider_key_returns_clear_error(self):
+        _load("prepare_embedding_chunks", "--mock")
+        with patch.dict(os.environ, {"OPENAI_API_KEY": ""}, clear=False):
+            resp = self.client.post(
+                "/api/tutor/ask/",
+                data=json.dumps({"query": "Explique la loi binomiale", "provider": "openai"}),
+                content_type="application/json",
+            )
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("OPENAI_API_KEY is missing", resp.json()["detail"])
+
+    def test_mock_tutor_does_not_instantiate_paid_clients(self):
+        from rag.tutor import answer_student_question
+
+        _load("prepare_embedding_chunks", "--mock")
+        with patch("ai.llm_client.OpenAIClient",
+                   side_effect=AssertionError("OpenAI should not be used")):
+            with patch("ai.llm_client.AnthropicClient",
+                       side_effect=AssertionError("Anthropic should not be used")):
+                package = answer_student_question("Explique le circuit RLC", provider="mock")
+        self.assertFalse(package["refused"])
 
     def test_api_endpoints_return_200(self):
         for url in ["/api/sections/", "/api/subjects/", "/api/chapters/",

@@ -10,9 +10,11 @@ from rest_framework import filters, status, viewsets
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from ai.llm_client import LLMConfigurationError
 from backend.exam_intelligence.models import (
     BacSection, Chapter, Concept, Exam, ExamExercise, Subject,
 )
+from rag.tutor import answer_student_question
 from rag.context_builder import RAGContextBuilder
 from .serializers import (
     BacSectionSerializer, ChapterSerializer, ConceptSerializer, ExamSerializer,
@@ -128,4 +130,33 @@ class RAGContextView(APIView):
             chapter=request.query_params.get("chapter"),
             top_k=top_k,
         )
+        return Response(package)
+
+
+class TutorAskView(APIView):
+    """Return a source-grounded tutor answer. Mock provider is the default."""
+
+    def post(self, request):
+        data = request.data if isinstance(request.data, dict) else {}
+        query = (data.get("query") or "").strip()
+        if not query:
+            return Response({"detail": "Missing required field: query"},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            package = answer_student_question(
+                query=query,
+                section=data.get("section"),
+                subject=data.get("subject"),
+                chapter=data.get("chapter"),
+                provider=data.get("provider") or "mock",
+                top_k=data.get("top_k") or 6,
+            )
+        except LLMConfigurationError as exc:
+            return Response({"detail": str(exc), "provider": data.get("provider")},
+                            status=status.HTTP_400_BAD_REQUEST)
+        except Exception as exc:
+            return Response({"detail": f"Tutor request failed: {type(exc).__name__}: {exc}"},
+                            status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
         return Response(package)
