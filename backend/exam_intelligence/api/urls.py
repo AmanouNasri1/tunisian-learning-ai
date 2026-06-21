@@ -1,10 +1,11 @@
 """Read-only API routes under /api/."""
 
+from django.urls import path
 from rest_framework.routers import DefaultRouter
 
 from .views import (
     BacSectionViewSet, ChapterViewSet, ConceptViewSet, ExamViewSet,
-    ExamExerciseViewSet, SubjectViewSet,
+    ExamExerciseViewSet, RAGContextView, SubjectViewSet,
 )
 
 router = DefaultRouter()
@@ -15,4 +16,6 @@ router.register(r"concepts", ConceptViewSet, basename="concept")
 router.register(r"exams", ExamViewSet, basename="exam")
 router.register(r"exercises", ExamExerciseViewSet, basename="exercise")
 
-urlpatterns = router.urls
+urlpatterns = [
+    path("rag/context/", RAGContextView.as_view(), name="rag-context"),
+] + router.urls

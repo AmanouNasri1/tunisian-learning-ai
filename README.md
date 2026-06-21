@@ -83,6 +83,7 @@ python manage.py runserver
 Then open:
 - Admin: http://127.0.0.1:8000/admin/
 - Read-only API: http://127.0.0.1:8000/api/ (sections, subjects, chapters, concepts, exams, exercises)
+- RAG context API: http://127.0.0.1:8000/api/rag/context/?q=fonction
 
 ### Quick schema check without PostgreSQL (optional)
 
@@ -111,9 +112,40 @@ $env:DATABASE_URL='sqlite:///dev.sqlite3'; python manage.py smoke_test_exam_inte
 | `load_reference_data <fixture.json>` | Load sections, subjects, coefficients, eras (idempotent). |
 | `load_example_exercises <dir-or-file>` | Load processed-exercise JSON into the structured DB (idempotent). |
 | `prepare_embedding_chunks [--mock]` | Create `EmbeddingChunk` rows from loaded exam data (idempotent). Default: status `pending`, no vectors, no API calls. `--mock` fills deterministic placeholder vectors (NOT real embeddings). |
+| `embed_chunks [--provider mock\|openai] [--limit N] [--force] [--dry-run]` | Embed eligible chunks. Default with no provider is dry-run only. `--provider mock` writes deterministic local vectors. `--provider openai --limit 20` is the explicit real-embedding path and requires `OPENAI_API_KEY`. |
 | `smoke_test_exam_intelligence` | Pass/fail report on DB, pgvector, tables, data, services. |
 | `smoke_test_api` | Hits the read-only API via the in-process test client; checks status + shape. |
 | `smoke_test_retrieval` | Real pgvector **hybrid** search (vector + keyword) when PostgreSQL + pgvector + ready embeddings are present; otherwise keyword fallback. Prints accurate diagnostics + the precise fallback reason. No paid APIs (query uses the deterministic mock embedder to match `--mock` chunks). |
+| `smoke_test_rag_context` | Builds structured RAG context packages for representative queries. No LLM calls and no paid APIs. |
+
+### Embedding workflow
+
+Local/test workflow, no paid APIs:
+
+```powershell
+python manage.py prepare_embedding_chunks
+python manage.py embed_chunks
+python manage.py embed_chunks --provider mock --limit 20
+python manage.py prepare_embedding_chunks --mock
+python manage.py smoke_test_rag_context
+```
+
+Real OpenAI embedding workflow, explicit opt-in:
+
+```powershell
+$env:OPENAI_API_KEY='sk-...'
+$env:EMBEDDING_MODEL='text-embedding-3-small'
+python manage.py embed_chunks --provider openai --limit 20
+python manage.py embed_chunks --provider openai --force --limit 20
+```
+
+If `OPENAI_API_KEY` is missing, `embed_chunks --provider openai` prints a clear warning and exits without writing fake success. Tests and smoke tests use mock/keyword paths only.
+
+### RAG context package
+
+`rag/context_builder.py` assembles retrieval context for the future tutor. It returns the original query, filters, retrieval mode, selected chunks, grouped context, citations, and warnings such as weak retrieval, missing correction/rubric, or mock embeddings in use.
+
+It does not call an LLM. It also does not call OpenAI embeddings implicitly; vector retrieval is used only for the deterministic mock-vector smoke path unless an explicit caller injects a real query embedder in the future.
 
 ## Testing & verification
 
@@ -130,9 +162,11 @@ python manage.py migrate
 python manage.py load_reference_data seed_data/reference/01_reference.json
 python manage.py load_example_exercises seed_data/examples
 python manage.py prepare_embedding_chunks
+python manage.py embed_chunks --provider mock --limit 20
 python manage.py smoke_test_exam_intelligence
 python manage.py smoke_test_api
 python manage.py smoke_test_retrieval
+python manage.py smoke_test_rag_context
 python manage.py test backend.exam_intelligence
 ```
 
@@ -143,9 +177,11 @@ python manage.py migrate
 python manage.py load_reference_data seed_data/reference/01_reference.json
 python manage.py load_example_exercises seed_data/examples
 python manage.py prepare_embedding_chunks
+python manage.py embed_chunks --provider mock --limit 20
 python manage.py smoke_test_exam_intelligence
 python manage.py smoke_test_api
 python manage.py smoke_test_retrieval
+python manage.py smoke_test_rag_context
 python manage.py test backend.exam_intelligence
 ```
 
@@ -166,6 +202,7 @@ python manage.py migrate
 python manage.py load_reference_data seed_data/reference/01_reference.json
 python manage.py load_example_exercises seed_data/examples
 python manage.py prepare_embedding_chunks
+python manage.py embed_chunks --provider mock --limit 20
 python manage.py smoke_test_exam_intelligence   # pgvector check should PASS here
 ```
 
@@ -177,23 +214,28 @@ python manage.py smoke_test_exam_intelligence   # pgvector check should PASS her
 | `backend/exam_intelligence/` | Core app: models, admin, API, services, management commands |
 | `ingestion/` | PDF → structured JSON pipeline (digital works; OCR stubbed) |
 | `ai/` | LLM + embedding abstractions, prompt templates |
-| `rag/` | Hybrid retrieval (vector/keyword backends stubbed pending DB wiring) |
+| `rag/` | Hybrid retrieval plus RAG context assembly |
 | `evaluation/` | Golden-set format + metrics (cases authored, runner TBD) |
 | `seed_data/` | JSON schema, worked examples, reference fixture |
 | `docs/` | Architecture, data model, sprint report |
 
 ## Known limitations / not done yet
 
-- **Real embeddings are not generated.** `prepare_embedding_chunks` creates chunks with
-  status `pending` (text + metadata, no vector). `--mock` fills DETERMINISTIC placeholder
+- **Real embeddings are opt-in only.** `prepare_embedding_chunks` creates chunks with
+  status `pending` (text + metadata, no vector). `--mock` or
+  `embed_chunks --provider mock` fills DETERMINISTIC placeholder
   vectors and marks them `ready` (transparent via `model_name='mock-deterministic-v1'`) —
-  enough to exercise the real pgvector path, but NOT semantically meaningful. A real
-  embedding job (calling an embedding API) is the next step.
+  enough to exercise the real pgvector path, but NOT semantically meaningful. Real OpenAI
+  embeddings require `embed_chunks --provider openai ...` plus `OPENAI_API_KEY`.
 - **RAG retrieval backends are implemented** (`rag/retriever.py`): pgvector cosine vector
   search + portable keyword search, fused with RRF. Vector search runs only on PostgreSQL +
   pgvector with `ready` embeddings; reranker is still optional/none.
+- **RAG context assembly is implemented** (`rag/context_builder.py`) and exposed at
+  `/api/rag/context/?q=fonction`. It packages citations and grouped context only; no LLM
+  calls happen.
 - **OCR** for scanned PDFs is stubbed; digital-PDF extraction works.
-- **No AI/RAG/correction HTTP endpoints yet** — only read-only reference browsing.
+- **No correction/tutor generation HTTP endpoints yet** - only read-only reference browsing
+  and a retrieval-context preview endpoint.
 - **Coefficients and curriculum-era boundaries are placeholders** — verify with a Tunisian
   Bac teacher before trusting any readiness score.
 - `migrate` against **real PostgreSQL + pgvector** has not been run yet (no Postgres in the

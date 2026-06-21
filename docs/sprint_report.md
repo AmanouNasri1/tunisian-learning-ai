@@ -210,3 +210,38 @@ python manage.py prepare_embedding_chunks --mock             # -> status='ready'
 python manage.py smoke_test_retrieval                        # vector search enabled: yes
 python manage.py test backend.exam_intelligence              # vector test now runs (not skipped)
 ```
+
+---
+
+# Real embedding integration + RAG context assembly
+
+Goal: add a real embedding-provider path and build the context package the future tutor will
+consume, without adding frontend/payments/marketplace/video and without hidden paid calls.
+
+## What changed
+
+- **Embedding abstraction** (`ai/embeddings.py`): added `MockEmbeddingProvider`,
+  `OpenAIEmbeddingProvider`, shared `mock_embedding`, `EMBEDDING_DIM`, and
+  `EmbeddingConfigurationError`. OpenAI uses `EMBEDDING_MODEL` and requires
+  `OPENAI_API_KEY`; missing keys fail clearly before any fake success.
+- **Embedding command** (`embed_chunks`): default invocation is dry-run only. Actual writes
+  require `--provider mock` or `--provider openai`; OpenAI calls are therefore explicit.
+  Supports `--limit`, `--force`, and `--dry-run`, and reports provider, found/embedded/
+  skipped/failed counts, batches, and warnings.
+- **Compatibility kept**: `prepare_embedding_chunks --mock` still creates deterministic
+  ready vectors with `model_name='mock-deterministic-v1'`.
+- **RAG context assembly** (`rag/context_builder.py`): packages selected chunks, grouped
+  context, citations, retrieval mode, diagnostics, and warnings. It does not call an LLM
+  or OpenAI embeddings implicitly.
+- **Smoke command** (`smoke_test_rag_context`): runs representative queries and prints mode,
+  counts, top sources, warnings, and mock-embedding status.
+- **Optional API**: `GET /api/rag/context/?q=fonction` returns the context package only.
+- **Tests**: provider determinism, mock embedding job, dry-run no-OpenAI path, missing-key
+  safety, context builder shape, and API package response.
+
+## Exact next milestone
+
+Add the first tutor-generation backend path: an explicit, source-grounded AI tutor command
+that consumes `rag/context_builder.py`, calls an LLM only behind an explicit provider flag,
+writes `AIInteraction` audit rows, and refuses to answer when retrieval is weak or required
+corrections/rubrics are missing.

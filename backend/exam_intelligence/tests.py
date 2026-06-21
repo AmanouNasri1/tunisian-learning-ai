@@ -14,14 +14,17 @@ actually touched — it only needs to select the sqlite backend.
 """
 
 import io
+import os
 
 from django.core.management import call_command
 from django.db import connection
 from django.test import TestCase
 from unittest import skipUnless
+from unittest.mock import patch
 
 from backend.exam_intelligence.models import (
-    BacSection, CurriculumEra, EmbeddingChunk, ExamExercise, RubricItem, Subject,
+    BacSection, CurriculumEra, EmbeddingChunk, EmbeddingStatus, ExamExercise,
+    RubricItem, Subject,
 )
 from backend.exam_intelligence.services.readiness import (
     ReadinessComponents, overall_readiness, subject_readiness,
@@ -74,6 +77,75 @@ class BackendVerificationTests(TestCase):
         self.assertEqual(first, second)
         # All chunks created without an embedding default to 'pending'.
         self.assertTrue(EmbeddingChunk.objects.filter(embedding_status="pending").exists())
+
+    def test_mock_embedding_provider_is_deterministic(self):
+        from ai.embeddings import EMBEDDING_DIM, MockEmbeddingProvider
+
+        provider = MockEmbeddingProvider()
+        first = provider.embed(["fonction"])[0]
+        second = provider.embed(["fonction"])[0]
+        other = provider.embed(["probabilite"])[0]
+        self.assertEqual(first, second)
+        self.assertNotEqual(first, other)
+        self.assertEqual(len(first), EMBEDDING_DIM)
+
+    def test_embed_chunks_provider_mock_updates_limited_pending_chunks(self):
+        from ai.embeddings import MOCK_MODEL_NAME
+
+        _load("prepare_embedding_chunks")
+        call_command("embed_chunks", "--provider", "mock", "--limit", "3",
+                     stdout=_NULL(), stderr=_NULL())
+        ready = EmbeddingChunk.objects.filter(
+            embedding_status=EmbeddingStatus.READY,
+            embedding__isnull=False,
+            model_name=MOCK_MODEL_NAME,
+        )
+        self.assertEqual(ready.count(), 3)
+        self.assertGreater(EmbeddingChunk.objects.filter(
+            embedding_status=EmbeddingStatus.PENDING).count(), 0)
+
+    def test_embed_chunks_default_dry_run_does_not_instantiate_openai(self):
+        _load("prepare_embedding_chunks")
+        with patch.dict(os.environ, {"EMBEDDING_PROVIDER": "openai"}, clear=False):
+            with patch("ai.embeddings.OpenAIEmbeddingProvider",
+                       side_effect=AssertionError("OpenAI should not be instantiated")):
+                call_command("embed_chunks", stdout=_NULL(), stderr=_NULL())
+        self.assertFalse(EmbeddingChunk.objects.filter(
+            embedding_status=EmbeddingStatus.READY).exists())
+
+    def test_embed_chunks_openai_missing_key_exits_safely(self):
+        _load("prepare_embedding_chunks")
+        out = io.StringIO()
+        with patch.dict(os.environ, {"OPENAI_API_KEY": ""}, clear=False):
+            call_command("embed_chunks", "--provider", "openai", "--limit", "1",
+                         stdout=out, stderr=_NULL())
+        self.assertIn("OPENAI_API_KEY is missing", out.getvalue())
+        self.assertFalse(EmbeddingChunk.objects.filter(
+            embedding_status=EmbeddingStatus.READY).exists())
+
+    def test_rag_context_builder_returns_structured_context(self):
+        from rag.context_builder import RAGContextBuilder
+
+        _load("prepare_embedding_chunks", "--mock")
+        package = RAGContextBuilder().build("fonction")
+        self.assertEqual(package["query"], "fonction")
+        self.assertIn(package["retrieval_mode"], {
+            "hybrid vector + keyword", "vector-only", "keyword-only", "none",
+        })
+        self.assertGreater(package["selected_chunk_count"], 0)
+        self.assertIn("grouped_context", package)
+        self.assertIn("assembled_context", package["grouped_context"])
+        self.assertIn("citations", package)
+        self.assertTrue(package["citations"])
+
+    def test_rag_context_api_returns_package(self):
+        _load("prepare_embedding_chunks", "--mock")
+        resp = self.client.get("/api/rag/context/?q=fonction")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data["query"], "fonction")
+        self.assertIn("grouped_context", data)
+        self.assertIn("selected_chunks", data)
 
     def test_api_endpoints_return_200(self):
         for url in ["/api/sections/", "/api/subjects/", "/api/chapters/",

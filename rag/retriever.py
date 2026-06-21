@@ -41,6 +41,9 @@ class RetrievedChunk:
     year: int | None = None
     subject_code: str = ""
     section_code: str = ""
+    chapter_code: str = ""
+    source_object_type: str = ""
+    source_object_id: int | None = None
 
 
 @dataclass
@@ -97,7 +100,7 @@ class Retriever:
         qs = EmbeddingChunk.objects.filter(
             embedding_status=EmbeddingStatus.READY, embedding__isnull=False)
         qs = self._apply_filters(qs, filters)
-        qs = (qs.select_related("subject", "section")
+        qs = (qs.select_related("subject", "section", "chapter")
               .annotate(distance=CosineDistance("embedding", query_vec))
               .order_by("distance")[:limit])
         # score = cosine similarity = 1 - cosine distance
@@ -160,6 +163,9 @@ class Retriever:
             relevance_weight=float(c.relevance_weight or 1.0), year=c.year,
             subject_code=c.subject.code if c.subject else "",
             section_code=c.section.code if c.section else "",
+            chapter_code=c.chapter.code if c.chapter else "",
+            source_object_type=c.source_object_type,
+            source_object_id=c.source_object_id,
         )
 
     # --- fusion / rerank / weighting (provider-agnostic) ------------------- #

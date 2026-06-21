@@ -6,11 +6,14 @@ plus a few explicit query-param filters where they're obviously useful. All
 endpoints are read-only; no internal/raw fields are exposed.
 """
 
-from rest_framework import filters, viewsets
+from rest_framework import filters, status, viewsets
+from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from backend.exam_intelligence.models import (
     BacSection, Chapter, Concept, Exam, ExamExercise, Subject,
 )
+from rag.context_builder import RAGContextBuilder
 from .serializers import (
     BacSectionSerializer, ChapterSerializer, ConceptSerializer, ExamSerializer,
     ExamExerciseSerializer, SubjectSerializer,
@@ -106,3 +109,23 @@ class ExamExerciseViewSet(viewsets.ReadOnlyModelViewSet):
         if params.get("relevance_status"):
             qs = qs.filter(relevance_status=params["relevance_status"])
         return qs.order_by("-exam__year", "number")
+
+
+class RAGContextView(APIView):
+    """Return structured retrieval context only. No LLM calls."""
+
+    def get(self, request):
+        query = (request.query_params.get("q") or "").strip()
+        if not query:
+            return Response({"detail": "Missing required query parameter: q"},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        top_k = request.query_params.get("top_k")
+        package = RAGContextBuilder().build(
+            query=query,
+            section=request.query_params.get("section"),
+            subject=request.query_params.get("subject"),
+            chapter=request.query_params.get("chapter"),
+            top_k=top_k,
+        )
+        return Response(package)

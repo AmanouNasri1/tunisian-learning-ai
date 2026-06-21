@@ -26,35 +26,17 @@ Usage:
     python manage.py prepare_embedding_chunks --mock
 """
 
-import hashlib
-import struct
-
 from django.core.management.base import BaseCommand
 from django.db import transaction
 
+from ai.embeddings import EMBEDDING_DIM, MOCK_MODEL_NAME, mock_embedding
 from backend.exam_intelligence.models import (
     Correction, EmbeddingChunk, EmbeddingStatus, ExamExercise,
 )
 
-MOCK_MODEL_NAME = "mock-deterministic-v1"
-EMBEDDING_DIM = 1536
 # Assumption: all current seed content is French. Document in README. Override per
 # exercise later when language detection / multilingual content exists.
 DEFAULT_LANGUAGE = "fr"
-
-
-def mock_embedding(text: str, dim: int = EMBEDDING_DIM) -> list[float]:
-    """Deterministic pseudo-vector from text. Reproducible, NOT a real embedding."""
-    values: list[float] = []
-    counter = 0
-    while len(values) < dim:
-        digest = hashlib.sha256(f"{counter}:{text}".encode("utf-8")).digest()
-        for i in range(0, len(digest), 4):
-            values.append(struct.unpack("I", digest[i:i + 4])[0] / 2**32 - 0.5)
-            if len(values) >= dim:
-                break
-        counter += 1
-    return values
 
 
 class Command(BaseCommand):
